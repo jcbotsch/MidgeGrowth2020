@@ -274,8 +274,8 @@ p322 <- p3 %>%
 
 prop22 <- glm(prop~algae_conc*midge+box, data = p322, family = quasibinomial())
 
-summary(prop14)
-plot(prop14)
+summary(prop22)
+plot(prop22)
 
 
 ##Length of Midges
@@ -343,7 +343,7 @@ cm %>% group_by(day) %>%
   geom_jitter(aes(y = body_size, col = factor(instar)), width = 2, height = 0, alpha = 0.5, data = cm %>% filter(species_name == "tt", !is.na(instar)))+
   geom_smooth(aes(y = body_size), size = 0.7, color = "red", method = "lm", se = FALSE, data = cm)+
   geom_segment(aes(yend = mean, x = xmin, xend = xmax), size = 1, col = "blue")+
-  geom_text(y = 5.5, x = 0, label = paste0("y = ", round(coef(growth)[2], 2), "x + ", round(coef(growth)[1], 2)))+
+  geom_text(y = 5.5, x = 0, label = paste0("y = ", round(coef(growth)[2], 2), "x + ", round(coef(growth)[1], 2), "\n R2 = ", round(summary(growth)$r.squared, 2)))+
   labs(x = "Day",
        y = "Tanytarsini Length (mm)",
        color = "Instar")
@@ -435,7 +435,7 @@ algaeprod <- nep %>%
 
 
 #Set values for transfer efficiencies
-AEa = 0.9 #arbitrary value set for the assimilation of fixed carbon by algae
+AEa = 1 #arbitrary value set for the assimilation of fixed carbon by algae
 NPEm = 0.54 #Net Production efficiency for T. gracilentus at Myvatn Lindegaard 1994
 
 #simulate parameter space following migge and algal productivity values
@@ -540,8 +540,8 @@ algaeprod %>%
   select(coreid, day, gpp_daily) %>% 
   mutate(day = paste0("day",day)) %>% 
   spread(day, gpp_daily) %>% 
-  mutate(change = day22-day14,
-         avg.gpp = (day22+day14)/2) %>% 
+  mutate(avg.gpp = (day22+day14)/2,
+         change = (day22-day14)/avg.gpp) %>% 
   left_join(midgeprod %>% select(coreid, Pdc)) %>% 
   filter(!is.na(Pdc)) %>% 
   ggplot(aes(x = change, y = Pdc, col = avg.gpp))+
@@ -550,30 +550,16 @@ algaeprod %>%
   geom_point()+
   scale_color_viridis_c()
 
-algaeprod %>% 
-  select(coreid, day, gpp_daily) %>% 
-  mutate(day = paste0("day",day)) %>% 
-  spread(day, gpp_daily) %>% 
-  mutate(change = day22-day14,
-         avg.gpp = (day22+day14)/2) %>% 
-  left_join(midgeprod %>% select(coreid, Pdc)) %>% 
-  filter(!is.na(Pdc)) %>% 
-  ggplot(aes(x = change, y = avg.gpp, col = Pdc))+
-  geom_vline(xintercept = 0)+
-  geom_hline(yintercept = 0)+
-  geom_point()+
-  scale_color_viridis_c()
-
 
 algaeprod %>% 
   select(coreid, day, gpp_daily) %>% 
   mutate(day = paste0("day",day)) %>% 
   spread(day, gpp_daily) %>% 
-  mutate(change = day22-day14,
-         avg.gpp = (day22+day14)/2) %>% 
+  mutate(avg.gpp = (day22+day14)/2,
+         change = (day22-day14)/avg.gpp) %>% 
   left_join(midgeprod %>% select(coreid, Pdc)) %>% 
   filter(!is.na(Pdc), !is.na(change)) %>% 
-  lm(Pdc~avg.gpp, data = .) %>% 
+  lm(Pdc~change, data = .) %>% 
   summary()
 
 #=====Q3 Version 3====
@@ -702,6 +688,7 @@ nep %>%
        fill = "")+
   scale_x_log10()
 
+
 ##Q2 LOG
 
 ## Number of Midges Present
@@ -759,8 +746,8 @@ plot(prop14log)
 
 prop22log <- glm(prop~log(algae_conc2)*midge+box, data = p322, family = quasibinomial())
 
-summary(prop14)
-plot(prop14)
+summary(prop22log)
+plot(prop22log)
 
 
 ##Length of Midges
@@ -791,7 +778,7 @@ l3 %>%
   geom_smooth(method = "lm", se = FALSE, color = "black", size = 0.7)+
   scale_fill_viridis_c()+
   labs(x = "Initial Sediment Conditions",
-       y = "Body Length  (mm)",
+         y = "Body Length of \nThird Instar Tanytarsini (mm)",
        fill = expression(GPP~(g^{2}~O[2]~m^{-2}~hr^{-1})~" "))+
   theme(legend.position = "bottom")+
   scale_x_log10()
