@@ -117,6 +117,55 @@ nep %>%
 #set number of bootstraps
 nboot <- 5000
 
+#define function for parametric bootstrapping
+para.boot <- function(data1, data2, response.var, lm1, lm2, results, nboot){
+  #check order for lm2
+  if(names(coef(lm1)) != names(coef(lm2)) & 
+     names(coef(lm1)) != c("(Intercept)", "log(algae_conc2)",
+                                              "midgeNo Midges", "box2", "log(algae_conc2):midgeNo Midges")){
+    print("Order of coefficients for models do not match, confirm model structure")
+  }
+  #perform bootstrap and extract results
+  else{
+    #define data frames for simulated data
+    dat1 = data1
+    dat2 = data2
+    
+    #perform bootstrap
+    for(i in 1:nboot){
+      #simulate results estimates for day 14
+      dat1$response.var <- simulate(lm1)[[1]] #simulate data from model
+      lm1boot <- update(lm1, .~., data = dat1) #perform lm on simulated data
+      
+      #extract coefficients 
+      results$intercept[i] = coef(lm1boot)[1]
+      results$algae[i] = coef(lm1boot)[2]
+      results$NoMidge[i] = coef(lm1boot)[3]
+      results$box2[i] = coef(lm1boot)[4]
+      results$interaction.algaeNoMidge[i] = coef(lm1boot)[5]
+      
+      #add coefficients from algae and its interaction with midges to estimate effect of algae conc on response in absence of midges
+      results$algae_x_NoMidge[i] = results$algae[i] + results$interaction.algaeNoMidge[i]
+      
+      #perform same process for second lm==
+      dat2$gpp <- simulate(lm2)[[1]] #simulate data from model
+      lm2boot <- update(lm2, .~., data = dat2) # fit regression to simulated data
+      
+      #extract coefficients
+      results$intercept[i + nboot] = coef(lm2boot)[1] 
+      results$algae[i + nboot] = coef(lm2boot)[2]
+      results$NoMidge[i + nboot] = coef(lm2boot)[3]
+      results$box2[i + nboot] = coef(lm2boot)[4]
+      results$interaction.algaeNoMidge[i + nboot] = coef(lm2boot)[5]
+      
+      #add coefficients from algae and no midge to estimate effect of algae conc on gpp in absence of midge
+      results$algae_x_NoMidge[i + nboot] = results$algae[i + nboot] + results$interaction.algaeNoMidge[i + nboot]
+      
+    }
+  }
+}
+
+
 #generate data frame to put all the results
 gboot1 <- data.frame(sim = rep(1:nboot, 2), 
                      intercept = NA, 
@@ -127,40 +176,8 @@ gboot1 <- data.frame(sim = rep(1:nboot, 2),
                      algae_x_NoMidge = NA, 
                      day = rep(c("Day 14", "Day 22"), each = nboot))
 
-#datasets to be simulated
-nep14boot <- nep14
-nep22boot <- nep22
-
-for(i in 1:nboot){
-  #simulate results estimates for day 14
-  nep14boot$gpp <- simulate(g14log)[[1]] #simulate data from model
-  g14boot <- lm(gpp~log(algae_conc2)*midge+box, data = nep14boot) #perform lm on simulated data
-  
-  #extract coefficients 
-  gboot1$intercept[i] = coef(g14boot)[1]
-  gboot1$algae[i] = coef(g14boot)[2]
-  gboot1$NoMidge[i] = coef(g14boot)[3]
-  gboot1$box2[i] = coef(g14boot)[4]
-  gboot1$interaction.algaeNoMidge[i] = coef(g14boot)[5]
-  
-  #add coefficients from algae and no midge to estimate effect of algae conc on gpp in absence of midges
-  gboot1$algae_x_NoMidge[i] = gboot1$algae[i] + gboot1$interaction.algaeNoMidge[i]
-  
-  #perform same process for day 22===
-  nep22boot$gpp <- simulate(g22log)[[1]] #simulate data from model
-  g22boot <- lm(gpp~log(algae_conc2)*midge+box, data = nep22boot) # fit regression to simulated data
-  
-  #extract coefficients
-  gboot1$intercept[i + nboot] = coef(g22boot)[1] 
-  gboot1$algae[i + nboot] = coef(g22boot)[2]
-  gboot1$NoMidge[i + nboot] = coef(g22boot)[3]
-  gboot1$box2[i + nboot] = coef(g22boot)[4]
-  gboot1$interaction.algaeNoMidge[i + nboot] = coef(g22boot)[5]
-  
-  #add coefficients from algae and no midge to estimate effect of algae conc on gpp in absence of midge
-  gboot1$algae_x_NoMidge[i + nboot] = gboot1$algae[i + nboot] + gboot1$interaction.algaeNoMidge[i + nboot]
-  
-}
+#peform bootstrapping
+para.boot(data1 = nep14, data2 = nep22, response.var = "gpp", lm1 = g14log, lm2 = g22log, results = gboot1, nboot = nboot)
 
 
 #plot all coefficients
@@ -210,7 +227,7 @@ gboot1 %>%
 
 ##Delta Method Version
 
-##NOT WORKING
+##NOT WORKING SOME PROBLEMS WITH DEFINITIONS
 
 dmg <- data.frame(day = c("Day 14", "Day 22"), 
            #estimate for the slope of the effect of initial sediment quality on gpp with midges
@@ -384,6 +401,85 @@ cc %>%
        fill = expression(GPP(g~O[2]~m^{-2}~hr^{-1})~" "))+
   scale_x_log10()
 
+cc %>% 
+  left_join(nep) %>% 
+  filter(day %in% c(14, 22)) %>% 
+  mutate(day = paste("Day", day)) %>% 
+  ggplot(aes(x = algae_conc2, y = live_tt, col = gpp, shape = day, linetype = day))+
+  facet_wrap(~midge, scales = "free")+
+  geom_jitter(size = 2, alpha = 0.6, width = 0.0005, height = 0.3)+
+  geom_smooth(method = "lm", se = FALSE, size = 0.6, col = "black")+
+  scale_color_viridis_c(trans = "log10")+
+  scale_shape_manual(values = c(21,16))+
+  scale_linetype_manual(values = c("dashed", "solid"))+
+  labs(y = "Live Tanytarsini",
+       x = "Initial Sediment Quality",
+       fill = expression(GPP(g~O[2]~m^{-2}~hr^{-1})~" "))+
+  scale_x_log10()+
+  lims(y = c(0, NA))
+
+#====Q2.1.a Bootstrapping Coefficients====
+#generate data frame to put all the results
+nmboot <- data.frame(sim = rep(1:nboot, 2), 
+                     intercept = NA, 
+                     algae = NA, 
+                     NoMidge = NA, 
+                     box2 = NA, 
+                     interaction.algaeNoMidge = NA,
+                     algae_x_NoMidge = NA, 
+                     day = rep(c("Day 14", "Day 22"), each = nboot))
+
+#peform bootstrapping
+para.boot(data1 = cc14, data2 = cc22, 
+          response.var = "live_tt", 
+          lm1 = nm14log, lm2 = nm22log, 
+          results = nmboot, nboot = nboot)
+
+
+#plot all coefficients
+gboot1 %>% 
+  gather(var, val, -sim, -day) %>% 
+  group_by(var, day) %>% 
+  mutate(mean = mean(val)) %>% 
+  ggplot(aes(val, fill = day))+
+  geom_histogram(alpha = 0.8, color = "gray50", data = . %>% filter(day == "Day 14"))+
+  geom_histogram(alpha = 0.8, color = "gray50", data =. %>% filter(day=="Day 22"))+
+  facet_wrap(~var, scales = "free")+
+  geom_vline(xintercept = 0, linetype = "dashed")+
+  geom_vline(aes(xintercept = mean, col = day), size = 1)
+
+
+gboot1 %>%
+  select(algae, algae_x_NoMidge, day) %>%
+  gather(var, val, -day) %>% 
+  group_by(var, day) %>% 
+  mutate(mean = mean(val),
+         var = ifelse(var == 'algae_x_NoMidge', "No Midges", "Midges")) %>% 
+  ggplot(aes(val, fill = day))+
+  facet_wrap(~var, scales = "free")+
+  geom_density(alpha = 0.5, color = "gray50", data = . %>% filter(day == "Day 14"))+
+  geom_density(alpha = 0.5, color = "gray50", data =. %>% filter(day=="Day 22"))+
+  geom_vline(xintercept = 0, linetype = "dashed")+
+  labs(x = "Effect of Inital Algal Concentration on GPP",
+       y = "")+
+  geom_vline(aes(xintercept = mean, col = day), size = 1)
+
+
+gboot1 %>%
+  select(algae, algae_x_NoMidge, day) %>%
+  gather(var, val, -day) %>% 
+  group_by(var, day) %>% 
+  mutate(mean = mean(val),
+         var = ifelse(var == 'algae_x_NoMidge', "No Midges", "Midges")) %>% 
+  ggplot(aes(val, fill = var))+
+  facet_wrap(~day, scales = "free")+
+  geom_density(alpha = 0.5, color = "gray50", data = . %>% filter(var == "Midges"))+
+  geom_density(alpha = 0.5, color = "gray50", data =. %>% filter(var == "No Midges"))+
+  geom_vline(xintercept = 0, linetype = "dashed")+
+  labs(x = "Effect of Inital Algal Concentration on GPP",
+       y = "")+
+  geom_vline(aes(xintercept = mean, col = var), size = 1)
+
 
 
 ##====Q2.2: Midge Development====
@@ -458,6 +554,69 @@ prop22log <- glm(prop~log(algae_conc2)*midge+box,
 summary(prop22log)
 plot(prop22log)
 
+#====Q2.2 Bootstrap====
+
+#generate data frame to put all the results
+propboot <- data.frame(sim = rep(1:nboot, 2), 
+                     intercept = NA, 
+                     algae = NA, 
+                     NoMidge = NA, 
+                     box2 = NA, 
+                     interaction.algaeNoMidge = NA,
+                     algae_x_NoMidge = NA, 
+                     day = rep(c("Day 14", "Day 22"), each = nboot))
+
+#peform bootstrapping
+para.boot(data1 = p314, data2 = p314, 
+          response.var = "prop", 
+          lm1 = prop14log, lm2 = prop22log, 
+          results = propboot, nboot = nboot)
+
+
+#plot all coefficients
+gboot1 %>% 
+  gather(var, val, -sim, -day) %>% 
+  group_by(var, day) %>% 
+  mutate(mean = mean(val)) %>% 
+  ggplot(aes(val, fill = day))+
+  geom_histogram(alpha = 0.8, color = "gray50", data = . %>% filter(day == "Day 14"))+
+  geom_histogram(alpha = 0.8, color = "gray50", data =. %>% filter(day=="Day 22"))+
+  facet_wrap(~var, scales = "free")+
+  geom_vline(xintercept = 0, linetype = "dashed")+
+  geom_vline(aes(xintercept = mean, col = day), size = 1)
+
+
+gboot1 %>%
+  select(algae, algae_x_NoMidge, day) %>%
+  gather(var, val, -day) %>% 
+  group_by(var, day) %>% 
+  mutate(mean = mean(val),
+         var = ifelse(var == 'algae_x_NoMidge', "No Midges", "Midges")) %>% 
+  ggplot(aes(val, fill = day))+
+  facet_wrap(~var, scales = "free")+
+  geom_density(alpha = 0.5, color = "gray50", data = . %>% filter(day == "Day 14"))+
+  geom_density(alpha = 0.5, color = "gray50", data =. %>% filter(day=="Day 22"))+
+  geom_vline(xintercept = 0, linetype = "dashed")+
+  labs(x = "Effect of Inital Algal Concentration on GPP",
+       y = "")+
+  geom_vline(aes(xintercept = mean, col = day), size = 1)
+
+
+gboot1 %>%
+  select(algae, algae_x_NoMidge, day) %>%
+  gather(var, val, -day) %>% 
+  group_by(var, day) %>% 
+  mutate(mean = mean(val),
+         var = ifelse(var == 'algae_x_NoMidge', "No Midges", "Midges")) %>% 
+  ggplot(aes(val, fill = var))+
+  facet_wrap(~day, scales = "free")+
+  geom_density(alpha = 0.5, color = "gray50", data = . %>% filter(var == "Midges"))+
+  geom_density(alpha = 0.5, color = "gray50", data =. %>% filter(var == "No Midges"))+
+  geom_vline(xintercept = 0, linetype = "dashed")+
+  labs(x = "Effect of Inital Algal Concentration on GPP",
+       y = "")+
+  geom_vline(aes(xintercept = mean, col = var), size = 1)
+
 
 
 ##====Q2.3: Midge Length====
@@ -510,9 +669,72 @@ l3 %>%
   scale_x_log10()
 
 
+#====Q2.3a: Bootstrap====
+#generate data frame to put all the results
+blboot <- data.frame(sim = rep(1:nboot, 2), 
+                     intercept = NA, 
+                     algae = NA, 
+                     NoMidge = NA, 
+                     box2 = NA, 
+                     interaction.algaeNoMidge = NA,
+                     algae_x_NoMidge = NA, 
+                     day = rep(c("Day 14", "Day 22"), each = nboot))
+
+#peform bootstrapping
+lboot <- para.boot(data1 = l314 %>% filter(!is.na(body_size)), data2 = l322 %>% filter(!is.na(body_size)), 
+          response.var = "live_tt", 
+          lm1 = bl14log, lm2 = bl22log, 
+          results = blboot, nboot = nboot)
 
 
-##====Q2.3a Midge Length Alternate====
+#plot all coefficients
+gboot1 %>% 
+  gather(var, val, -sim, -day) %>% 
+  group_by(var, day) %>% 
+  mutate(mean = mean(val)) %>% 
+  ggplot(aes(val, fill = day))+
+  geom_histogram(alpha = 0.8, color = "gray50", data = . %>% filter(day == "Day 14"))+
+  geom_histogram(alpha = 0.8, color = "gray50", data =. %>% filter(day=="Day 22"))+
+  facet_wrap(~var, scales = "free")+
+  geom_vline(xintercept = 0, linetype = "dashed")+
+  geom_vline(aes(xintercept = mean, col = day), size = 1)
+
+
+gboot1 %>%
+  select(algae, algae_x_NoMidge, day) %>%
+  gather(var, val, -day) %>% 
+  group_by(var, day) %>% 
+  mutate(mean = mean(val),
+         var = ifelse(var == 'algae_x_NoMidge', "No Midges", "Midges")) %>% 
+  ggplot(aes(val, fill = day))+
+  facet_wrap(~var, scales = "free")+
+  geom_density(alpha = 0.5, color = "gray50", data = . %>% filter(day == "Day 14"))+
+  geom_density(alpha = 0.5, color = "gray50", data =. %>% filter(day=="Day 22"))+
+  geom_vline(xintercept = 0, linetype = "dashed")+
+  labs(x = "Effect of Inital Algal Concentration on GPP",
+       y = "")+
+  geom_vline(aes(xintercept = mean, col = day), size = 1)
+
+
+gboot1 %>%
+  select(algae, algae_x_NoMidge, day) %>%
+  gather(var, val, -day) %>% 
+  group_by(var, day) %>% 
+  mutate(mean = mean(val),
+         var = ifelse(var == 'algae_x_NoMidge', "No Midges", "Midges")) %>% 
+  ggplot(aes(val, fill = var))+
+  facet_wrap(~day, scales = "free")+
+  geom_density(alpha = 0.5, color = "gray50", data = . %>% filter(var == "Midges"))+
+  geom_density(alpha = 0.5, color = "gray50", data =. %>% filter(var == "No Midges"))+
+  geom_vline(xintercept = 0, linetype = "dashed")+
+  labs(x = "Effect of Inital Algal Concentration on GPP",
+       y = "")+
+  geom_vline(aes(xintercept = mean, col = var), size = 1)
+
+
+
+
+##====Q2.3b Midge Length Alternate====
 #3rd instars averaged
 bl14log2 <- lm(body_size~log(algae_conc2)*midge+box,
                weights = live_tt,
@@ -783,6 +1005,7 @@ apm <- algaeprod %>%
 AEa = 1 #arbitrary value set for the assimilation of fixed carbon by algae
 NPEm = 0.54 #Net Production efficiency for T. gracilentus at Myvatn Lindegaard 1994
 FA = 1 #Fraction of assimilated material in midge attributed to algae
+AEm = c(0.1, 0.5, 1) #Assimilation efficiency
 
 #simulate parameter space following migge and algal productivity values
 sim <- data.frame(Pdc = 0:max(midgeprod$Pdc)) %>% 
@@ -794,14 +1017,23 @@ sim <- data.frame(Pdc = 0:max(midgeprod$Pdc)) %>%
          ip = ingestion/NPP) %>%  #ingestion by midges/production of resource
   mutate(ip2 = ifelse(ip>1, NA, ip)) 
 
+
+#the slope = NPE*AE
+data.frame(GPP = 0:max(apm$gpp_daily)) %>% 
+  crossing(AE = c(0.1, 0.5, 1)) %>%
+  mutate( NPP = GPP*AEa,
+          Pdc = (NPP*NPEm*AE)/FA) %>% 
+  lm(Pdc~0+NPP:factor(AE), data = .)
+
 #exploring midge productivity and algal productivity across the parameter space
+
 
 #====Figure 6: Midge productivity and primary production=====
 sim%>% 
   filter(AE %in% c(0.1, 0.5, 1.0)) %>% 
   ggplot(aes(x = NPP, y = Pdc))+
   facet_wrap(~paste("AEm = ", AE), ncol = 5)+
-  stat_contour(aes(z = ip2, linetype = factor(..level..)), col = "black", binwidth = 0.25, show.legend = FALSE)+
+  stat_contour(aes(z = ip2, linetype = factor(..level..)), col = "black", binwidth = 0.25, show.legend = TRUE)+
   geom_hline(yintercept = 0, col = "black")+
   #add points of observed values
   geom_point(aes(shape = as.character(day), col = algae_conc2), alpha = 0.7, stroke = 1,  size = 2, 
@@ -828,7 +1060,65 @@ sim%>%
   scale_color_gradient(low = "goldenrod2", high = "darkgreen")+
   scale_shape_manual(values = c(21, 16))+
   # theme(legend.position = "right")+
-  scale_linetype_manual(values = c("dotted", "dashed", "solid"))
+  scale_linetype_manual(values = c("dotted", "dashed", "solid"))+
+  lims(x = c(0,NA))
+
+lm(Pdc~NPP*factor(day), 
+   weights = 1/Pdc.se^2,
+   data = midgeprod %>%  
+     left_join(algaeprod %>% group_by(coreid, algae_conc2) %>% select(-day) %>% 
+                 mutate(NPP = gpp_daily*AEa) %>% 
+                 summarise(NPP = meanna(NPP)))) %>% summary()
+
+
+#====Better====
+production <- midgeprod %>%  
+  left_join(algaeprod %>% group_by(coreid, algae_conc2) %>% select(-day) %>% 
+              mutate(NPP = gpp_daily*AEa) %>% 
+              summarise(NPP = meanna(NPP)))
+
+IPs = data.frame(AEm = AEm, 
+                 NPEm = NPEm, 
+                 x = max(production$NPP)+5,
+                 slope = AEm*NPEm,
+                 label = paste("AE[m]==", format(AEm, nsmall = 1)),
+                 label2 = "I[m]/P[a] == 1") %>% 
+  mutate(y = x*NPEm*AEm)
+
+production %>% 
+  ggplot(aes(x = NPP, y = Pdc))+
+  geom_hline(yintercept = 0, linetype = "dashed")+
+  geom_point(aes(color = algae_conc, shape = factor(day)))+
+  geom_errorbar(aes(ymin = Pdc-Pdc.se, ymax = Pdc+Pdc.se, color = algae_conc))+
+  geom_segment(aes(x = 0, y = 0, xend = max(production$NPP)+5, yend =  slope * (max(production$NPP)+5)), data = IPs)+
+  geom_text(aes(x = x, y = y, label = label), parse = TRUE, hjust = 0, vjust = 1, color = "black", data = IPs)+
+  geom_text(aes(x = x, y = y, label = label2), parse = TRUE, hjust = 0,vjust = 0, color = "black", data = IPs)+
+  labs(x = expression("Algal Productivity \u03BCg C "~d^{-1}),
+       y = expression("Midge Productivity \u03BCg C "~d^{-1}),
+       fill = expression(I[m]/P[a]),
+       color = "Initial Sediment Quality",
+       shape = "Day")+
+  scale_color_gradient(low = "goldenrod2", high = "darkgreen")+
+  scale_shape_manual(values = c(21, 16))+
+  geom_smooth(method = "lm")+
+  lims(x = c(0, 200),
+       y = c(NA, 100))+
+  coord_equal()+
+  guides(colour = guide_colourbar(title.position="top", title.hjust = 0.5),
+         shape = guide_legend(title.position="top", title.hjust = 0.5))
+
+
+prodmod <- lm(Pdc~NPP:factor(day), 
+   weights = 1/Pdc.se^2,
+   data = production)
+
+coef(prodmod)[2]/NPEm
+coef(prodmod)[3]/NPEm
+
+
+production %>% 
+  mutate(lower = Pdc-2*Pdc.se) %>% 
+  filter(lower/(NPEm*1)>NPP)
 
 #====Q3: Supplement====
 # using day of incubation
@@ -884,7 +1174,7 @@ sim%>%
 
 #how many mesocosms could survive on algae
 midgeprod %>%  
-  filter(Pdc>0) %>% 
+  # filter(Pdc>0) %>% 
   left_join(algaeprod %>% 
               mutate(NPP = gpp_daily*AEa)) %>% 
   select(coreid, day, box, algae_conc, Pdc, gpp_daily, NPP) %>% 
