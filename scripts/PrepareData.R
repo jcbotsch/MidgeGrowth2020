@@ -2,6 +2,30 @@
 library(tidyverse)
 library(lubridate)
 
+sumna <- function(x){
+  if(all(is.na(x))){
+    NA
+  }
+  else{
+    sum(x, na.rm = TRUE)
+  }
+}
+
+meanna <- function(x){
+  if(all(is.na(x))){
+    NA
+  }
+  else{
+    mean(x, na.rm = TRUE)
+  }
+}
+
+#====set aesthetics====
+theme_set(theme_bw()+
+            theme(panel.grid = element_blank(),
+                  strip.background = element_blank(),
+                  legend.position = "bottom"))
+
 #====Metadata====
 algae <- read_csv("raw data/Algal_Treatments29Oct20.csv")
 tubes <- read_csv("raw data/Tube_Treatments29Oct20.csv")
@@ -121,7 +145,7 @@ cm_raw %>%
   select(coreid, sampledate, flag, comments)
 
 #find instars
-mg_instars = c(0,4.3,7.3,12, 15)/55*1000 #divide by ocular micrometer units to get mm then 1000 to get micrometers
+mg_instars = c(0,4.3,7.3,12, 18)/55*1000 #divide by ocular micrometer units to get mm then 1000 to get micrometers
 #Instars from Lindegaard: 75 125-140 225-250 325-350 (I'm skeptical of the veracity of the 4th instar measures)
 
 #check instars
@@ -187,6 +211,84 @@ cc <- cc %>%
                      dead = 0) %>% 
               select(coreid, sampledate, day, live_tt, live, dead) %>% 
               unique())
+
+
+#====Hobo Data====
+hobo_raw <- read_csv("raw data/MGhobo.csv", skip = 1) %>% 
+  janitor::clean_names() 
+
+hobo <- hobo_raw %>% 
+  rename(date_time = 2,
+         temp = 3,
+         lux = 4) %>% 
+  select(date_time, temp, lux) %>% 
+  mutate(date_time = mdy_hms(date_time)) %>% 
+  filter(date_time>as_datetime("2020-08-07 15:00:00"),
+         date_time<as_datetime("2020-08-29 10:50:00"))
+
+
+hobo %>% 
+  ggplot(aes(x = date_time, y = lux))+
+  geom_line()
+
+
+
+
+hobo %>% 
+  gather(var, val, -date_time) %>% 
+  bind_cols(nep1 %>% 
+              group_by(date) %>% 
+              summarise(dttm_start = min(dttm_start),
+                        dttm_end = max(dttm_end)) %>% 
+              gather(type, time, -date) %>% 
+              mutate(incub = ifelse(date == "2020-08-18", 1, 2),
+                     type = paste0(type, incub)) %>% 
+              select(type, time) %>% 
+              spread(type, time)) %>% 
+  filter(date_time>dttm_start1&date_time<dttm_end1|
+           date_time>dttm_start2 & date_time<dttm_end2) %>%
+  mutate(group = ifelse(date_time<dttm_end1, "Day 14", "Day 22")) %>% 
+  ggplot()+
+  facet_wrap(var~group, scales = "free", strip.position = "left")+
+  geom_rect(aes(xmin = dttm_start, xmax =dttm_end, fill = dark_light, ymin = -Inf, ymax = Inf), 
+            data = nep1 %>% 
+              group_by(dark_light, date) %>% 
+              summarise(dttm_start = min(dttm_start),
+                        dttm_end = max(dttm_end)) %>% 
+              mutate(group = ifelse(date == "2020-08-18", "Day 14", "Day 22")))+
+  geom_line(aes(x = date_time, y = val))+
+  theme(strip.placement = "outside")+
+  labs(x = "Date",
+       y = NULL,
+       fill = "")
+
+
+
+
+
+hobo %>% 
+  gather(var, val, -date_time) %>% 
+  ggplot()+
+  facet_wrap(~var, scales = "free_y", strip.position = "left", ncol = 1)+
+  geom_rect(aes(xmin = dttm_start, xmax =dttm_end, fill = dark_light, ymin = -Inf, ymax = Inf), 
+            data = nep1 %>% 
+              group_by(dark_light, date) %>% 
+              summarise(dttm_start = min(dttm_start),
+                        dttm_end = max(dttm_end)))+
+  geom_line(aes(x = date_time, y = val))+
+  theme(strip.placement = "outside")+
+  labs(x = "Date",
+       y = NULL,
+       fill = "")
+  
+#====Number of midges at sample site 3 August 2020====
+data.frame(fract_count = rep(1/8,3), tanyt = c(20, 12, 21)) %>% 
+  mutate(tanyt_tot = tanyt/fract_count) %>% 
+  summarise(mean = mean(tanyt_tot)/corearea,
+            sd = sd(tanyt_tot)/corearea)
+  
+
+
 
 #=====Write to CSV====
 
