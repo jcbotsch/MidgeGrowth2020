@@ -170,9 +170,9 @@ gboot1 <- data.frame(sim = rep(1:nboot, 2),
                      day = rep(c("Day 14", "Day 22"), each = nboot))
 
 #peform bootstrapping
-gboot1 <- para.boot(data1 = nep14, data2 = nep22, 
-          response.var = "gpp", 
-          lm1 = g14log, lm2 = g22log, 
+gboot1 <- para.boot(data1 = nep14, data2 = nep22,
+          response.var = "gpp",
+          lm1 = g14log, lm2 = g22log,
           results = gboot1, nboot = nboot)
 
 
@@ -316,6 +316,12 @@ nep %>%
   scale_x_log10()+
   theme(strip.placement = "outside")
 
+nep %>% 
+  ggplot(aes(x = -resp, y = gpp, col = algae_conc2))+
+  geom_point()+
+  facet_wrap(~day)+
+  geom_abline(slope = 1)+
+  coord_equal()
 
 ##Midge Effects on chlorophyll
 
@@ -943,8 +949,7 @@ prodse <- function(n1, n2, wt1, wt2, deltaT, n1se, w1se, w2se){
 midgeprod <- cm %>% 
   left_join(cc) %>% 
   filter(species_name == "tt",
-         day!=0,
-         midge == "Midges") %>% 
+         day!=0) %>% 
   group_by(coreid) %>% 
   mutate(w = weight(body_size)) %>% #estimate dry mass
   group_by(coreid, day, box, algae_conc) %>% 
@@ -1037,12 +1042,13 @@ data.frame(GPP = 0:max(apm$gpp_daily)) %>%
 #====Figure 6: Midge productivity and primary production=====
 #combine estimates of midge production with algae production
 production <- midgeprod %>%  
-  left_join(algaeprod %>% 
-              group_by(coreid, algae_conc2) %>% 
+  full_join(algaeprod %>% 
+              group_by(coreid, algae_conc2, midge) %>% 
               # select(-day) %>% 
               mutate(NPP = gpp_daily*AEa,
                      NPP.mean = meanna(NPP)) %>% #multiply GPP by AEa (the efficiency at which algae convert fixed carbon into new biomass)
-              summarise(NPP = meanna(NPP))) #average by day
+              summarise(NPP.sd = sd(NPP),
+                        NPP = meanna(NPP))) #average by day
 
 
 #slopes and lines for I/P figure
@@ -1056,7 +1062,10 @@ IPs = data.frame(AEm = AEm,
 
 
 production %>% 
+  mutate(Pdc = ifelse(is.na(Pdc), 0, Pdc),
+         Pdc.se = ifelse(is.na(Pdc), 0, Pdc.se)) %>% 
   ggplot(aes(x = NPP, y = Pdc))+
+  facet_wrap(~midge)+
   geom_hline(yintercept = 0, linetype = "dashed")+
   geom_errorbar(aes(ymin = Pdc-Pdc.se, ymax = Pdc+Pdc.se, color = algae_conc))+
   geom_point(aes(color = algae_conc, shape = factor(day)), fill = "white")+
@@ -1103,11 +1112,6 @@ midgeprod %>%
          shape = guide_legend(title.position="top", title.hjust = 0.5))
 
 
-nep %>% 
-  select(coreid, day, gpp, midge) %>% 
-  mutate(midge = str_replace(midge, " ", "_")) %>% 
-  spread(midge, gpp)
-  summarise()
 
 #What is the AE if they only eat algae??
 prodmod1 <- lm(Pdc~NPP, 
@@ -1187,97 +1191,4 @@ sim%>%
 
 
 
-
-
-
-#how many mesocosms could survive on algae
-midgeprod %>%  
-  # filter(Pdc>0) %>% 
-  left_join(algaeprod %>% 
-              mutate(NPP = gpp_daily*AEa)) %>% 
-  select(coreid, day, box, algae_conc, Pdc, gpp_daily, NPP) %>% 
-  crossing(AE = seq(0.1,1,by = 0.001)) %>% 
-  mutate(ingestion = Pdc/(NPEm*AE),
-         ip = ingestion/NPP) %>% 
-  group_by(AE) %>% 
-  count(algae_only = ip<1) %>% 
-  filter(algae_only == TRUE) %>% 
-  ggplot(aes(y = n, x= AE))+
-  lims(y = c(NA, nrow(midgeprod %>% filter(Pdc>0))))+
-  geom_line()+
-  labs(y = expression("mesocosms with "~I[m]/P[a]<1),
-       x = expression(AE[m]))
-
-midgeprod %>%  
-  filter(Pdc>0) %>% 
-  left_join(algaeprod %>% 
-              mutate(NPP = gpp_daily*AEa)) %>% 
-  select(coreid, day, box, algae_conc, Pdc, gpp_daily, NPP) %>% 
-  crossing(AE = seq(0.1,1,by = 0.001)) %>% 
-  mutate(ingestion = Pdc/(NPEm*AE),
-         ip = ingestion/NPP) %>% 
-  group_by(AE) %>% 
-  count(algae_only = ip<1) %>% 
-  filter(algae_only == TRUE) %>% 
-  ggplot(aes(y = n, x= AE))+
-  lims(y = c(NA, nrow(midgeprod %>% filter(Pdc>0))))+
-  geom_line()+
-  geom_line(col = "red", data = midgeprod %>%  
-              filter(Pdc>0) %>% 
-              left_join(algaeprod %>% 
-                          filter(day == 14) %>% 
-                          select(-day) %>% 
-                          mutate(NPP = gpp_daily*AEa)) %>% 
-              select(coreid, day, box, algae_conc, Pdc, gpp_daily, NPP) %>% 
-              crossing(AE = seq(0.1,1,by = 0.001)) %>% 
-              mutate(ingestion = Pdc/(NPEm*AE),
-                     ip = ingestion/NPP) %>% 
-              group_by(AE) %>% 
-              count(algae_only = ip<1) %>% 
-              filter(algae_only == TRUE))+
-  labs(y = expression("mesocosms with "~I[m]/P[a]<1),
-       x = expression(AE[m]))
-
-#averaged gpp
-midgeprod %>%  
-  filter(Pdc>0) %>% 
-  left_join(algaeprod %>% 
-              mutate(NPP = gpp_daily*AEa) %>% 
-              group_by(coreid) %>% 
-              summarise(NPP = meanna(NPP))) %>% 
-  crossing(AE = seq(0.1,1,by = 0.001)) %>% 
-  mutate(ingestion = Pdc/(NPEm*AE),
-         ip = ingestion/NPP) %>% 
-  group_by(AE) %>% 
-  count(algae_only = ip<1) %>% 
-  filter(algae_only == TRUE) %>% 
-  ggplot(aes(y = n, x= AE))+
-  lims(y = c(NA, nrow(midgeprod %>% filter(Pdc>0))))+
-  geom_line()+
-  geom_line(col = "red", data = midgeprod %>%  
-              filter(Pdc>0) %>% 
-              left_join(algaeprod %>% 
-                          filter(day == 14) %>% 
-                          select(-day) %>% 
-                          mutate(NPP = gpp_daily*AEa)) %>% 
-              select(coreid, day, box, algae_conc, Pdc, gpp_daily, NPP) %>% 
-              crossing(AE = seq(0.1,1,by = 0.001)) %>% 
-              mutate(ingestion = Pdc/(NPEm*AE),
-                     ip = ingestion/NPP) %>% 
-              group_by(AE) %>% 
-              count(algae_only = ip<1) %>% 
-              filter(algae_only == TRUE))+
-  geom_line(col = "blue", data = midgeprod %>%  
-              filter(Pdc>0) %>% 
-              left_join(algaeprod %>% 
-                          mutate(NPP = gpp_daily*AEa)) %>% 
-              select(coreid, day, box, algae_conc, Pdc, gpp_daily, NPP) %>% 
-              crossing(AE = seq(0.1,1,by = 0.001)) %>% 
-              mutate(ingestion = Pdc/(NPEm*AE),
-                     ip = ingestion/NPP) %>% 
-              group_by(AE) %>% 
-              count(algae_only = ip<1) %>% 
-              filter(algae_only == TRUE))+
-  labs(y = expression("mesocosms with "~I[m]/P[a]<1),
-       x = expression(AE[m]))
 
