@@ -129,6 +129,15 @@ nep <- nep1 %>%
   arrange(startdate, coreid) %>% 
   select(coreid, startdate, day, resp, nep, gpp)
 
+# add temp (unsaved. )
+nep %>% 
+  left_join(nep1 %>% 
+              select(coreid, date, dark_light, contains("wtemp")) %>% 
+              mutate(wtemp = (wtemp_init_cor+wtemp_final)/2) %>% 
+              select(coreid, date, dark_light, wtemp) %>% 
+              spread(dark_light, wtemp) %>% 
+              rename(resp_temp = dark, nep_temp = light)) 
+
 
 #====Midge Measurements====
 #read data

@@ -1084,6 +1084,72 @@ production %>%
   guides(colour = guide_colourbar(title.position="top", title.hjust = 0.5),
          shape = guide_legend(title.position="top", title.hjust = 0.5))
 
+
+production %>% 
+  mutate(growth = g*dwc*1000,
+         gd = growth/day) %>% 
+  # filter(midge == "Midges") %>% 
+  # lm(gd~NPP, data = .) %>% summary()
+  ggplot(aes(x = NPP, y = gd))+
+  geom_point()+
+  facet_wrap(~midge)+
+  geom_smooth(method = "lm")+
+  geom_hline(yintercept = 0)
+
+
+midgeprod %>% 
+  mutate(growth = g*dwc*1000,
+         gd = growth/day) %>% 
+  left_join(algaeprod %>% 
+              select(coreid, algae_conc2, midge, day, gpp_daily) %>% 
+              group_by(coreid, algae_conc2) %>% 
+              mutate(NPP = gpp_daily*AEa,
+                     day = paste0("NPP_", day)) %>%
+              select(-gpp_daily) %>% 
+              spread(day, NPP) %>% 
+              rowwise() %>% 
+              mutate(NPP = meanna(c(NPP_14, NPP_22)), 
+                     deltaNPP = NPP_22-NPP_14)) %>% 
+  filter(!is.na(NPP_22)) %>% 
+  ggplot(aes(x = gd, y = deltaNPP))+
+  facet_wrap(~midge, scales = "free")+
+  geom_point()
+
+#in progress: looking at changes from first incubation to second 
+cm %>% 
+  left_join(cc) %>% 
+  filter(species_name == "tt",
+         day!=22) %>% 
+  group_by(coreid) %>% 
+  mutate(w = weight(body_size)) %>% #estimate dry mass
+  group_by(coreid, day, box, algae_conc) %>% 
+  summarise(wt = meanna(w), #average biomass of a midge (mg)
+            nt = unique(live_tt), #number of individuals in the mesocosm
+            wt.se = sd(w, na.rm = TRUE)/sqrt(nt)) %>% 
+  # combine with initial values
+  bind_cols(cm %>% 
+              left_join(cc) %>% 
+              filter(species_name == "tt",
+                     day == 14) %>% 
+              mutate(w = weight(body_size),
+                     c = w*dwc) %>%
+              group_by(algae_conc, midge) %>%
+              summarise(samps = n_distinct(coreid),
+                        n= unique(live_tt),
+                        wt1 = meanna(w), #weight at t = 0
+                        n1 = meanna(n), #number at t = 0
+                        wt1.se = sd(w)/sqrt(n),
+                        nt1.se = sd(n)/sqrt(samps)) %>% 
+              select(-sampledate)) %>% 
+  ungroup %>% 
+  mutate(Pd = incsumprod(n1 = n1, n2 = nt, wt1 = wt1, wt2 = wt, deltaT = day)$Pd, #production in mg,
+         g = incsumprod(n1 = n1, n2 = nt, wt1 = wt1, wt2 = wt, deltaT = day)$g,
+         Pd.se = prodse(n1 = n1, n2 = nt, wt1 = wt1, wt2 = wt, deltaT = day, n1se = nt1.se, w1se = wt1.se, w2se = wt.se),
+         Pdc.se = Pd.se*dwc*1000,
+         Pdc = Pd*dwc*1000) #convert from weight to c (mg) then convert to micrograms 
+
+
+
 midgeprod %>% 
   left_join(algaeprod %>% 
               select(coreid, algae_conc2, day, gpp_daily) %>% 
@@ -1095,8 +1161,8 @@ midgeprod %>%
               rowwise() %>% 
               mutate(NPP = meanna(c(NPP_14, NPP_22)))) %>% 
   ggplot(aes(y = Pdc, x = NPP))+
-  geom_rect(aes(ymin = Pdc-Pdc.se, ymax = Pdc.se+Pdc, xmin = NPP_14, xmax = NPP_22, fill = algae_conc2), alpha = 0.2)+
-  geom_errorbar(aes(ymin = Pdc-Pdc.se, ymax = Pdc.se+Pdc, col = algae_conc2), data = . %>% filter(is.na(NPP_22)))+
+  geom_errorbar(aes(xmin = NPP_14, xmax = NPP_22, col = algae_conc2))+
+  geom_errorbar(aes(ymin = Pdc-Pdc.se, ymax = Pdc.se+Pdc, col = algae_conc2))+
   geom_hline(yintercept = 0, linetype = "dashed")+
   geom_point(aes(col = algae_conc2))+
   geom_segment(aes(x = 0, y = 0, xend = max(production$NPP)+5, yend =  slope * (max(production$NPP)+5)), data = IPs)+
