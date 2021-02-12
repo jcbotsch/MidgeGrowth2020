@@ -1129,6 +1129,23 @@ midgeprod2 %>%
   lm(deltaGPP~Pdc, data = .) %>% 
   summary()
 
+midgeprod2 %>% 
+  left_join(algaeprod %>% 
+              select(coreid, algae_conc2, midge, day, gpp_daily) %>% 
+              group_by(coreid, algae_conc2) %>% 
+              mutate(GPP = gpp_daily,
+                     day = paste0("NPP_", day)) %>%
+              select(-gpp_daily) %>% 
+              spread(day, GPP) %>% 
+              rowwise() %>% 
+              mutate(GPP = meanna(c(NPP_14, NPP_22)), 
+                     deltaGPP = NPP_22-NPP_14,
+                     rel_deltaGPP = deltaGPP/GPP)) %>% 
+  filter(!is.na(NPP_22), midge == "No Midges") %>%
+  lm(rel_deltaGPP~Pdc, data = .) %>% 
+  summary()
+
+
 midgeprod %>% 
   mutate(growth = g*dwc*1000,
          gd = growth/day) %>% 
