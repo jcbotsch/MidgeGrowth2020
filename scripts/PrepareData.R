@@ -289,6 +289,54 @@ hobo %>%
   labs(x = "Date",
        y = NULL,
        fill = "")
+
+
+hobo %>% 
+  filter(date_time>as.Date("2020-08-10")) %>% 
+  summarise(tempmean = mean(temp),
+            tempsd = sd(temp))
+
+
+hobo %>% 
+  group_by(hour = hour(date_time)) %>% 
+  summarise(temp = mean(temp),
+            lux = mean(lux)) %>%
+  gather(var, val, -hour) %>% 
+  ggplot(aes(x = hour, y = val))+
+  facet_wrap(~var, scales = "free")+
+  geom_line()
+
+
+hobo %>% 
+  mutate(hour = hour(date_time),
+         date = as.Date(date_time)) %>% 
+  gather(var, val, -hour, -date, -date_time) %>% 
+  left_join(nep1 %>% 
+              group_by(dark_light, date) %>% 
+              summarise(dttm_start = min(dttm_start),
+                        dttm_end = max(dttm_end))) %>% 
+  filter(is.na(dark_light)) %>% 
+  ggplot(aes(x = hour, y = val, group = date, col = date))+
+  facet_wrap(~var, scales = "free")+
+  geom_smooth(alpha = 0.5, size = 0.7, se = FALSE)
+
+
+
+hobo %>% 
+  filter(date_time<as_datetime("2020-08-16 23:00:00"),
+         lux!=0) %>% 
+  summarise(tempmean = mean(temp),
+            tempsd = sd(temp),
+            luxmean = mean(lux),
+            luxsd = sd(lux))
+
+hobo %>% 
+  filter(date_time>as_datetime("2020-08-16 23:00:00"),
+         lux!=0) %>% 
+  summarise(tempmean = mean(temp),
+            tempsd = sd(temp),
+            luxmean = mean(lux),
+            luxsd = sd(lux))
   
 #====Number of midges at sample site 3 August 2020====
 data.frame(fract_count = rep(1/8,3), tanyt = c(20, 12, 21)) %>% 

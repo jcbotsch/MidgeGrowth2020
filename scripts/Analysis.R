@@ -48,34 +48,35 @@ cc_raw <- read_csv("clean data/MG_cc.csv")
 #====Figure 1: Chorophyll and organic content in stock sediment====
 omplot <- om %>% 
   left_join(meta) %>% 
-  ggplot(aes(algae_conc, perc.org))+
+  ggplot(aes(algae_conc2, perc.org))+
   geom_point(size =3)+
   scale_y_continuous(labels = scales::percent_format())+
-  labs(x = "Sediment Quality",
+  labs(x = "Resource Availability",
        y = "Organic Content")
 
 #corrected for pheophytin
 corrchlplot <- chl %>% 
   left_join(meta) %>% 
-  ggplot(aes(x = algae_conc, y = chl))+
+  ggplot(aes(x = algae_conc2, y = chl/1000))+
   geom_point(size = 2, alpha = 0.8)+
   scale_y_continuous(labels = scales::comma_format())+
   labs(x = "",
-       y = "Chlorophyll \u03BCg/L") +  #\u03BC is the unicode for mu
+       y = "Chlorophyll mg/L") +  #\u03BC is the unicode for mu
   theme(axis.text.x = element_blank())
 
 #uncorrected
 uncorrchlplot <- chl %>% 
   left_join(meta) %>% 
-  ggplot(aes(x = algae_conc, y = uncorr_chl))+
+  ggplot(aes(x = algae_conc2, y = uncorr_chl/1000))+
   geom_point(size = 2, alpha = 0.8)+
   scale_y_continuous(labels = scales::comma_format())+
   labs(x = "",
-       y = "Chlorophyll \u03BCg/L") + #\u03BC is the unicode for mu
+       y = "Chlorophyll mg/L") + #\u03BC is the unicode for mu
   theme(axis.text.x = element_blank())
 
 
 fig1 <- grid.arrange(corrchlplot, omplot, nrow  = 2)
+plot(fig1)
 
 # ggpreview(plot = fig1, dpi = 650, width = 80, height = 100, units = "mm")
 # ggsave(plot = fig1, filename = "Botsch_MG_Fig1.pdf", dpi = 650, device = "pdf", width = 80, height = 80, units = "mm")
@@ -106,6 +107,7 @@ nep22 <- nep %>%
 g22log <- lm(gpp~log(algae_conc2)*midge+box, data = nep22)
 summary(g22log)
 # plot(g22log)
+
 
 
 #====Do the slopes differ between the two sample dates====
@@ -166,13 +168,79 @@ gboot1 <- data.frame(sim = rep(1:nboot, 2),
                      algae_x_NoMidge = NA, 
                      day = rep(c("Day 14", "Day 22"), each = nboot))
 
-#peform bootstrapping
+# #peform bootstrapping
 # gboot1 <- para.boot(data1 = nep14, data2 = nep22,
 #           response.var = "gpp",
 #           lm1 = g14log, lm2 = g22log,
 #           results = gboot1, nboot = nboot)
-# 
 
+#estimate for effect of initial food availability on gpp day 14
+axn_14 <- as.numeric(g14log$coefficients[5] + g14log$coefficients[2])
+
+#standard error of day 14 estimate
+axn_14se <- sqrt(vcov(g14log)[2,2] + vcov(g14log)[5,5] + 2*vcov(g14log)[2,5])
+
+#print
+c(estimate = axn_14, se = axn_14se)
+# exttract the same info from the bootstrap
+gboot1 %>% filter(day == "Day 14") %>% summarise(mean = mean(algae_x_NoMidge),
+                                                             sd = sd(algae_x_NoMidge))
+
+axn_22 <- as.numeric(g22log$coefficients[5] + g22log$coefficients[2])
+
+axn_22se <- sqrt(vcov(g22log)[2,2] + vcov(g22log)[5,5] + 2*vcov(g22log)[2,5])
+
+c(estimate = axn_22, se = axn_22se)
+
+
+gppbootfig <- data.frame(estimate = c(axn_14, axn_22, g14log$coefficients["log(algae_conc2)"], g22log$coefficients["log(algae_conc2)"]), 
+           se = c(axn_14se, axn_22se, coef(summary(g14log))["log(algae_conc2)", "Std. Error"], coef(summary(g22log))["log(algae_conc2)", "Std. Error"]), 
+           day = c("Day 14", "Day 22", "Day 14", "Day 22"), 
+           midge = c("No Midges", "No Midges", "Midges", "Midges")) %>% 
+  mutate(midge = fct_relevel(midge, c("No Midges", "Midges"))) %>% 
+  ggplot(aes(x = estimate, xmin = estimate-2*se, xmax = estimate+2*se, midge, col = day))+
+  geom_vline(xintercept = 0)+
+  geom_pointrange(position = position_dodge(width = 0.4))+
+  geom_text(aes(label = day, x = estimate-2*se), hjust = 0, data = . %>% filter(midge == "No Midges"))+
+  scale_color_manual(values = c("#F4A582", "#CA0020"))+
+  labs(y = "", 
+       x = "Effect of Initial Resource Availability")+
+  theme(legend.position = "none")
+
+
+
+
+
+gboot1 %>% filter(day == "Day 22") %>% summarise(mean = mean(algae_x_NoMidge), sd = sd(algae_x_NoMidge))
+
+ggplot(data.frame(algae_x_NoMidge = c(-0.005, 0.005)), aes(x = algae_x_NoMidge))+
+  geom_density(data = gboot1 %>% filter(day == "Day 14"), fill = "blue")+
+  stat_function(fun = dnorm, args = list(axn_14, axn_14se), col = "red", size = 2)
+
+ggplot(data.frame(algae_x_NoMidge = c(-0.005, 0.005)), aes(x = algae_x_NoMidge))+
+  geom_density(data = gboot1 %>% filter(day == "Day 22"), fill = "blue")+
+  stat_function(fun = dnorm, args = list(axn_22, axn_22se), col = "red", size = 2)
+
+ggplot(data.frame(x = c(-0.0035, 0.004)), aes(x = x))+
+  stat_function(geom = "area", aes(fill = "Day 22", color = "No Midges"), fun = dnorm, args = list(axn_22, axn_22se), size = 1, alpha = 0.5)+
+  stat_function(geom = "area",aes(fill = "Day 14", color = "No Midges"), fun = dnorm, args = list(axn_14, axn_14se),  size = 1, alpha = 0.5)+
+  stat_function(geom = "area",aes(fill = "Day 22", color = "Midges"), fun = dnorm, args = list(g14log$coefficients[2], coef(summary(g14log))["log(algae_conc2)", "Std. Error"]), size = 1, alpha = 0.5)+
+  stat_function(geom = "area",aes(fill = "Day 14", color = "Midges"), fun = dnorm, args = list(coef(g22log)["log(algae_conc2)"], coef(summary(g22log))["log(algae_conc2)", "Std. Error"]),  size = 1, alpha = 0.5)+
+  scale_color_manual(values = c("gray", "black"))+
+  theme(axis.text.y = element_blank(),
+        axis.title.y = element_blank(),
+        axis.ticks.y = element_blank())
+
+
+ggplot(data.frame(x = c(-0.0035, 0.004)), aes(x = x))+
+  stat_function(geom = "area", aes(fill = "Day 22", color = "No Midges"), fun = dnorm, args = list(axn_22, axn_22se), size = 1, alpha = 0.5)+
+  stat_function(geom = "area",aes(fill = "Day 14", color = "No Midges"), fun = dnorm, args = list(axn_14, axn_14se),  size = 1, alpha = 0.5)+
+  stat_function(geom = "area",aes(fill = "Day 22", color = "Midges"), fun = dnorm, args = list(g14log$coefficients[2], coef(summary(g14log))["log(algae_conc2)", "Std. Error"]), size = 1, alpha = 0.5)+
+  stat_function(geom = "area",aes(fill = "Day 14", color = "Midges"), fun = dnorm, args = list(coef(g22log)["log(algae_conc2)"], coef(summary(g22log))["log(algae_conc2)", "Std. Error"]),  size = 1, alpha = 0.5)+
+  scale_color_manual(values = c("gray", "black"))+
+  theme(axis.text.y = element_blank(),
+        axis.title.y = element_blank(),
+        axis.ticks.y = element_blank())
 
 #plot all coefficients
 gboot1 %>% 
@@ -195,31 +263,54 @@ nepv2.1 <- nep %>%
   geom_smooth(aes(color = midge), method = "lm", size = 0.75, se = FALSE)+
   scale_fill_manual(values = c("black", "gray60"))+
   scale_color_manual(values = c("black", "gray60"))+
-  labs(x = "Initial Sediment Quality",
-       y = expression(GPP(g~O[2]~m^{-2}~hr^{-1})),
+  labs(x = "Initial Resource Availability",
+       y = expression("GPP "~(g~O[2]~m^{-2}~hr^{-1})),
        color = "",
        fill = "")+
-  scale_x_log10()+
+  scale_x_continuous(trans = "log", breaks = c(0.01, 0.1, 1))+
   theme(legend.position = c(0.2,0.95),
         legend.text.align = 0,
         legend.key = element_rect(fill = NA),
         legend.background = element_rect(fill = NA, color = NA))
 
-gppbootfig <- gboot1 %>%
-  select(algae, algae_x_NoMidge, day) %>%
-  gather(var, val, -day) %>% 
-  group_by(var, day) %>% 
-  mutate(mean = mean(val),
-         var = ifelse(var == 'algae_x_NoMidge', "No Midges", "Midges"),
-         label.x = median(val),
-         label.y = ifelse(day == "Day 14", 1000, 600)) %>% 
-  ggplot(aes(val, fill = day))+
-  geom_density(alpha = 0.5, color = "gray50")+
+#get densities
+gdens <- data.frame(x = seq(-0.005, 0.005, by = 0.0001)) %>% 
+  mutate(density = dnorm(x, axn_14, axn_14se),
+         label.x = axn_14,
+         day = "Day 14",
+         midge = "No Midges") %>% 
+  bind_rows(data.frame(x = seq(-0.005, 0.005, by = 0.0001)) %>% 
+              mutate(density = dnorm(x, axn_22, axn_22se),
+                     label.x = axn_22,
+                     day = "Day 22",
+                     midge = "No Midges")) %>% 
+  bind_rows(data.frame(x = seq(-0.005, 0.005, by = 0.0001)) %>% 
+              mutate(density = dnorm(x, g14log$coefficients["log(algae_conc2)"], coef(summary(g14log))["log(algae_conc2)", "Std. Error"]),
+                     label.x = g14log$coefficients["log(algae_conc2)"],
+                     day = "Day 14",
+                     midge = "Midges")) %>% 
+  bind_rows(data.frame(x = seq(-0.005, 0.005, by = 0.0001)) %>% 
+              mutate(density = dnorm(x, g22log$coefficients["log(algae_conc2)"], coef(summary(g22log))["log(algae_conc2)", "Std. Error"]),
+                     label.x = g22log$coefficients["log(algae_conc2)"],
+                     day = "Day 22",
+                     midge = "Midges")) %>% 
+  group_by(x) %>% 
+  mutate(total_density = sum(density)) %>% 
+  filter(total_density>1) %>% 
+  group_by(day, midge) %>% 
+  mutate(label.y = max(density))
+  ungroup
+
+
+
+gppbootfig <- gdens %>% 
+  ggplot(aes(x, y = density, fill = day))+
+  geom_area(position = "identity", alpha = 0.5, color = "gray50")+
   # geom_density(alpha = 0.5, color = "gray50", data =. %>% filter(day=="Day 22"))+
   geom_vline(xintercept = 0, linetype = "dashed")+
-  facet_wrap(~var)+
+  facet_wrap(~midge)+
   geom_text(aes(label = day, y = label.y, x = label.x, color = day))+
-  labs(x = "Effect of Inital Sediment Quality on GPP",
+  labs(x = "Effect of Initial Resource Availability on GPP",
        y = "",
        fill = "")+
   theme(axis.text.y = element_blank(),
@@ -229,9 +320,21 @@ gppbootfig <- gboot1 %>%
   scale_color_manual(values = c("#F4A582", "#CA0020"))+
   scale_x_continuous(breaks = c(0.003,0, -0.003))
 
+gdens %>% 
+  ggplot()+
+  ggridges::geom_density_ridges(aes(x = x, y = midge, fill = day, height = density, group = interaction(midge, day)), stat = "identity", alpha = 0.5)+
+  geom_vline(xintercept = 0, linetype = "dashed")+
+  labs(x = "Effect of Initial Resource Availability on GPP",
+       y = "",
+       fill = "")+
+  theme(legend.position = c(0.1, 0.8))+
+  scale_fill_manual(values = c("#F4A582", "#CA0020"))+
+  scale_color_manual(values = c("#F4A582", "#CA0020"))+
+  scale_x_continuous(breaks = c(0.003,0, -0.003))
+
 cowplot::plot_grid(nepv2.1, gppbootfig, nrow = 2, rel_heights = c(2/3,1/3))
 
-# ggpreview(plot = last_plot(), dpi = 650, width = 80, height = 120, units = "mm")
+ggpreview(plot = last_plot(), dpi = 650, width = 80, height = 120, units = "mm")
 # ggsave(plot = last_plot(), filename = "Botsch_MG_Fig2.pdf", device = "pdf", dpi = 650, width = 80, height = 120, units = "mm")
 
 gboot1 %>% 
@@ -255,7 +358,7 @@ nep %>%
   theme(legend.position = "bottom")+
   labs(y = expression("Change in" ~O[2] (g~m^{-2}~hr^{-1})),
        x = "Incubation Day",
-       color = "Initial Sediment Quality")+
+       color = "Initial Resource Availability")+
   scale_color_viridis_c(trans = "log10")+
   scale_x_continuous(breaks = c(14, 22))
 
@@ -273,13 +376,18 @@ nep %>%
   geom_smooth(aes(color = midge), method = "lm", size = 0.75, se = FALSE)+
   scale_fill_manual(values = c("black", "gray60"))+
   scale_color_manual(values = c("black", "gray60"))+
-  labs(x = "Initial Sediment Quality",
+  labs(x = "Initial Resource Availability",
        y = expression(g~O[2]~m^{-2}~hr^{-1}),
        color = "",
        fill = "")+
-  scale_x_log10()+
+  scale_x_continuous(trans = "log", breaks = c(0.01, 0.1, 1))+
   theme(strip.placement = "outside")
 
+r14log <- lm(resp~ log(algae_conc2)*midge + box, data = nep14)
+summary(r14log)
+
+r22log <- lm(resp~ log(algae_conc2)*midge + box, data = nep22)
+summary(r22log)
 
 nep %>% 
   ggplot(aes(x = -resp, y = gpp, col = algae_conc2))+
@@ -287,49 +395,6 @@ nep %>%
   facet_wrap(~day)+
   geom_abline(slope = 1)+
   coord_equal()
-
-##Midge Effects on chlorophyll
-
-#This is especially sloppy because I might remove all of this. 
-lm(NDVI_R~log(algae_conc2)*midge+box, data = ndvi %>% left_join(meta) %>% filter(day ==14)) %>% summary()
-lm(NDVI_R~log(algae_conc2)*midge+box, data = ndvi %>% left_join(meta) %>% filter(day ==22)) %>% summary()
-
-ndvi %>% 
-  left_join(meta) %>% 
-  ggplot(aes(x = algae_conc2, y = NDVI_R, fill = midge))+
-  geom_point(size = 2, shape = 21)+
-  facet_wrap(~paste("Day", day))+
-  # geom_smooth(aes(col = midge), method = "lm", se = FALSE)+
-  scale_fill_manual(values = c("black", "gray60"))+
-  scale_color_manual(values = c("black", "gray60"))+
-  labs(x = "Initial Sediment Quality",
-       y = "NDVI")+
-  scale_x_log10()
-
-#supplement
-ndvi %>%
-  mutate(coreid = as.character(coreid)) %>% 
-  left_join(nep) %>% 
-  ggplot(aes(x = gpp, y = NDVI_R, col = algae_conc2))+
-  geom_point()+
-  facet_grid(midge~day)+
-  geom_smooth(method = "lm", se = FALSE, col = "black", size = 0.7)+
-  scale_color_viridis_c(trans = "log10")+
-  labs(x = expression(GPP~(g^{2}~O[2]~m^{-2}~hr^{-1})),
-       y = "NDVI",
-       color = "Initial Sediment Quality")
-
-ndvi %>% 
-  left_join(meta) %>% 
-  ggplot(aes(x = factor(day), y = NDVI_R, col = algae_conc2, group = factor(algae_conc)))+
-  geom_jitter(width = 0.2)+
-  facet_wrap(~midge)+
-  geom_smooth(method = "lm", se = FALSE, size = 0.7)+
-  scale_color_viridis_c(trans = "log10")+
-  labs(x = "Day",
-       y = "NDVI",
-       color = "Initial Sediment Quality")
-
 
 
 #====Question 2: Sediment Effects on Midges =====
@@ -382,9 +447,9 @@ cc %>%
   geom_smooth(method = "lm", se = FALSE, size = 0.6, col = "black")+
   scale_fill_viridis_c( breaks = c(0, 0.025, 0.05))+
   labs(y = "Live Tanytarsini",
-       x = "Initial Sediment Quality",
+       x = "Initial Resource Availability",
        fill = expression(GPP(g~O[2]~m^{-2}~hr^{-1})~" "))+
-  scale_x_log10()
+  scale_x_continuous(trans = "log", breaks = c(0.01, 0.1, 1))
 
 fig3.v1 <- cc %>% 
   filter(day %in% c(14, 22)) %>% 
@@ -396,11 +461,11 @@ fig3.v1 <- cc %>%
   geom_smooth(aes(color = midge), method = "lm", size = 0.75, se = FALSE)+
   scale_fill_manual(values = c("black", "gray60"))+
   scale_color_manual(values = c("black", "gray60"))+
-  labs(x = "Initial Sediment Quality",
+  labs(x = "Initial Resource Availability",
        y = "Live Tanytarsini",
        color = "",
        fill = "")+
-  scale_x_log10()+
+  scale_x_continuous(trans = "log", breaks = c(0.01, 0.1, 1))+
   theme(legend.position = c(0.5,0.95),
         legend.text.align = 0,
         legend.key = element_rect(fill = NA),
@@ -418,12 +483,12 @@ fig3.v2 <- cc %>%
   geom_smooth(aes(color = day), method = "lm", size = 0.75, alpha = 0.5, se = FALSE)+
   scale_fill_manual(values = c("#F4A582", "#CA0020"))+
   scale_color_manual(values = c("#F4A582", "#CA0020"))+
-  labs(x = "Initial Sediment Quality",
+  labs(x = "Initial Resource Availability",
        y = "Live Tanytarsini",
        color = "",
        fill = "")+
   lims(y = c(0,NA))+
-  scale_x_log10()+
+  scale_x_continuous(trans = "log", breaks = c(0.01, 0.1, 1))+
   theme(legend.position = c(0.3,0.95),
         legend.text.align = 0,
         legend.key = element_rect(fill = NA),
@@ -446,10 +511,32 @@ cc %>%
   scale_shape_manual(values = c(21,16))+
   scale_linetype_manual(values = c("dashed", "solid"), guide = NULL)+
   labs(y = "Live Tanytarsini",
-       x = "Initial Sediment Quality",
+       x = "Initial Resource Availability",
        fill = expression(GPP(g~O[2]~m^{-2}~hr^{-1})~" "))+
-  scale_x_log10()+
+  scale_x_continuous(trans = "log", breaks = c(0.01, 0.1, 1))+
   lims(y = c(0, NA))
+
+
+
+
+
+cc %>%
+  ungroup %>% 
+  filter(as.numeric(coreid)<=100) %>% 
+  arrange(as.numeric(coreid)) %>% 
+  mutate(column = rep(1:5, times = 20),
+         row = rep(1:20, each = 5),
+         diff = ifelse(midge == "Midges", live_tt-20, live_tt)) %>% 
+  ggplot(aes(x = row, y = column, shape = midge, col = midge))+
+  facet_grid(day~box, scales = "free")+
+  geom_tile(aes(fill = algae_conc2), col = "white")+
+  geom_label(aes(label = live_tt), size = 5, alpha = 1)+
+  scale_shape_manual(values = c(16,18), )+
+  scale_fill_viridis(trans = "log10")+
+  scale_color_manual(values = c("firebrick4", "dodgerblue"))+
+  scale_x_continuous(breaks = c(1:20))+
+  theme(axis.title = element_blank())
+
 
 #====Q2.1.a Bootstrapping Coefficients====
 #generate data frame to put all the results
@@ -498,7 +585,7 @@ nmboot %>%
   ggplot(aes(val, fill = var))+
   geom_density(alpha = 0.5, color = "gray50")+
   geom_vline(xintercept = 0, linetype = "dashed")+
-  labs(x = "Effect of Inital Sediment Quality \non Number of Midges",
+  labs(x = "Effect of Initial Resource Availability \non Number of Midges",
        y = "",
        fill = "")+
   lims(y = c(0, 16))+
@@ -525,7 +612,7 @@ nmbootfig <- nmboot %>%
   geom_vline(xintercept = 0, linetype = "dashed")+
   facet_wrap(~var)+
   geom_text(aes(label = day, y = label.y, x = label.x, color = day))+
-  labs(x = "Effect of Inital Sediment Quality \non Number of Midges",
+  labs(x = "Effect of Initial Resource Availability \non Number of Midges",
        y = "",
        fill = "")+
   lims(y = c(0, 16))+
@@ -589,11 +676,11 @@ p3 %>%
   facet_grid(midge~day)+
   scale_fill_viridis_c(option = "plasma")+
   lims(y = c(0,1))+
-  labs(x = "Initial Sediment Quality",
+  labs(x = "Initial Resource Availability",
        y = "Proportion of Larval Midges\n3rd instar or higher",
        fill = "Number of Larvae")+
   theme(legend.position = "bottom")+
-  scale_x_log10()
+  scale_x_continuous(trans = "log", breaks = c(0.01, 0.1, 1))
 
 
 p3 %>% 
@@ -604,13 +691,13 @@ p3 %>%
   geom_hline(yintercept = startingprop)+
   facet_grid(midge~day)+
   lims(y = c(0,1))+
-  labs(x = "Initial Sediment Quality",
+  labs(x = "Initial Resource Availability",
        y = "Proportion of Larval Midges\n3rd instar or higher",
        size = "",
        fill = "")+
   theme(legend.position = "bottom")+
   scale_fill_manual(values = c("black", "gray60"), guide = NULL)+
-  scale_x_log10()
+  scale_x_continuous(trans = "log", breaks = c(0.01, 0.1, 1))
 
 # ggpreview(plot = last_plot(), dpi = 650, width = 80, height = 120, units = "mm")
 # ggsave(plot = last_plot(), filename = "Botsch_MG_Fig4.pdf", device = "pdf", dpi = 650, width = 80, height = 120, units = "mm")
@@ -639,13 +726,12 @@ summary(prop22log)
 
 
 ##====Q2.3: Midge Length====
-#subset to 3rd instar tanytarsini and to not include the stocked midges
+#subset to not include the stocked midges
 l3 <- cm %>% 
-  filter(instar == 3,
-         day!=0)
+  filter(day!=0)
 
 #subset day 14
-l314 <- l3 %>% 
+l314 <- cm %>% 
   filter(day == 14)
 
 bl14log <- lmer(body_size~log(algae_conc2)*midge+box+
@@ -673,41 +759,34 @@ Anova(bl22log, type = "2", test.statistic = "F")
 
 
 #====Figure 5: Body Length====
-l3 %>% 
-  left_join(nep) %>%
-  mutate(day = paste("Day", day)) %>% 
-  ggplot(aes(x = algae_conc2, y = body_size, fill = gpp))+
-  facet_grid(midge~day, scales = "free_x")+
-  geom_point(alpha = 0.2, shape = 21, size = 2)+
-  geom_smooth(method = "lm", se = FALSE, color = "black", size = 0.7)+
-  scale_fill_viridis_c()+
-  labs(x = "Initial Sediment Conditions",
-       y = "Body Length of \nThird Instar Tanytarsini (mm)",
-       fill = expression(GPP~(g^{2}~O[2]~m^{-2}~hr^{-1})~" "))+
-  theme(legend.position = "bottom")+
-  scale_x_log10()
+
+#average body legnth in initial midges
+start_length <- {cm %>% 
+  filter(day == 0) %>% 
+  summarise(length = meanna(body_size))}$length
 
 l3 %>% 
   filter(day %in% c(14, 22)) %>% 
   mutate(day = paste("Day", day)) %>% 
-  ggplot(aes(x = algae_conc2, y = body_size, fill = midge))+
+  ggplot(aes(x = algae_conc2, y = body_size))+
   facet_wrap(~day, ncol = 1)+
-  geom_point(size  = 1.5, alpha = 0.7, shape = 21, stroke = 0.2, position = position_jitterdodge(dodge.width = 0.15, jitter.width = 0.1))+
+  geom_hline(yintercept = start_length, linetype = 2, size = 0.5)+
+  geom_point(aes(fill = midge), size  = 1.5, alpha = 0.7, shape = 21, stroke = 0.2, position = position_jitterdodge(dodge.width = 0.15, jitter.width = 0.1))+
   geom_smooth(aes(color = midge), method = "lm", size = 0.65, se = FALSE)+
   scale_fill_manual(values = c("black", "gray60"))+
   scale_color_manual(values = c("black", "gray60"))+
-  labs(y = "Body Length of \nThird Instar Tanytarsini (mm)",
-       x = "Initial Sediment Quality",
+  labs(y = "Midge Body Length (mm)",
+       x = "Initial Resource Availability",
        color = "",
        fill = "")+
-  scale_x_log10()+
+  scale_x_continuous(trans = "log", breaks = c(0.01, 0.1, 1))+
   theme(legend.position = c(0.5,0.95),
         legend.text.align = 0,
         legend.key = element_rect(fill = NA),
         legend.background = element_rect(fill = NA, color = NA),
         legend.direction = "horizontal")
 
-# ggpreview(plot = last_plot(), dpi = 650, width = 80, height = 80, units = "mm")
+ggpreview(plot = last_plot(), dpi = 650, width = 80, height = 80, units = "mm")
 # ggsave(plot = last_plot(), filename = "Botsch_MG_Fig5.pdf", device = "pdf", dpi = 650, width = 80, height = 80, units = "mm")
 
 
@@ -739,20 +818,18 @@ l3 %>%
   left_join(nep) %>%
   group_by(coreid, gpp, algae_conc2, day, midge) %>% 
   summarise(bs_se = sd(body_size, na.rm = TRUE), 
-            body_size = meanna(body_size)) %>% 
+            body_size = meanna(body_size),
+            n = n()) %>% 
   mutate(day = paste("Day", day)) %>% 
-  ggplot(aes(x = algae_conc2, y = body_size, fill = gpp))+
-  facet_grid(midge~day, scales = "free_x")+
-  geom_point(alpha = 0.7, shape = 21, size = 2)+
-  geom_errorbar(aes(ymin = body_size-bs_se, ymax = body_size + bs_se), 
-                col = "black", width = 0)+
-  geom_smooth(method = "lm", se = FALSE, color = "black", size = 0.7)+
-  scale_fill_viridis_c()+
+  ggplot(aes(x = algae_conc2, y = body_size, fill = midge))+
+  facet_wrap(~day, scales = "free_x")+
+  geom_point(aes(size = n), alpha = 0.7, shape = 21, position = position_dodge())+
+  geom_smooth(aes(col = midge ), method = "lm", se = FALSE, size = 0.7)+
   labs(x = "Initial Sediment Conditions",
        y = "Body Length of \nThird Instar Tanytarsini (mm)",
-       fill = expression(GPP~(g^{2}~O[2]~m^{-2}~hr^{-1})~" "))+
+       fill = "")+
   theme(legend.position = "bottom")+
-  scale_x_log10()
+  scale_x_continuous(trans = "log", breaks = c(0.01, 0.1, 1))
 
 #body size for all instars averaged
 bl14log3 <- lm(body_size~log(algae_conc2)*midge+box, 
@@ -792,10 +869,10 @@ cm %>%
   geom_smooth(method = "lm", se = FALSE, color = "black", size = 0.7)+
   scale_fill_viridis_c()+
   labs(x = "Initial Sediment Conditions",
-       y = "Body Length of \nThird Instar Tanytarsini (mm)",
+       y = "Midge Body Length (mm)",
        fill = expression(GPP~(g^{2}~O[2]~m^{-2}~hr^{-1})~" "))+
   theme(legend.position = "bottom")+
-  scale_x_log10()
+  scale_x_continuous(trans = "log", breaks = c(0.01, 0.1, 1))
 
 #Separating midge no midge
 
@@ -831,7 +908,7 @@ summary(growth)
 
 growth3 <- lm(body_size~day*factor(instar), data = cm %>% filter(species_name == "tt"))
 summary(growth3)
-plot(growth3)
+# plot(growth3)
 
 
 cm %>% 
@@ -852,457 +929,75 @@ cm %>%
               crossing(day = 0, algae_conc2 = unique(meta$algae_conc2))) %>% 
   ggplot(aes(x = algae_conc2, y = length, ymin = length-length.se, ymax = length+length.se, col = factor(day)))+
   geom_pointrange(position = position_dodge(width = 0.1))+
-  scale_x_log10()+
-  labs(x = "Initial Sediment Quality",
+  scale_x_continuous(trans = "log", breaks = c(0.01, 0.1, 1))+
+  labs(x = "Initial Resource Availability",
        y = "Average Midge Length (mm)",
-       color = "Day")
+       color = "Day")+
+  scale_color_brewer(palette = "Set1")
+
+#=====Supplement: Looking at Spatial patterns within boxes====
 
 
-#====Question 3: How Much do midges rely on algae?====
-#convert midges to biomass following Lindegaard and Jonasson 1979
-#AFDW in mg^(1/3) = 0.0442 + 0.0879 * length in mm 
-weight <- function(l){
-  (0.442 + 0.0879 * l )^3 
-}
+#====Spatial Patterns of GPP====
+nep %>%
+  filter(day == 14) %>% 
+  ungroup %>% 
+  filter(as.numeric(coreid)<=100) %>% 
+  arrange(as.numeric(coreid)) %>% 
+  mutate(column = rep(1:5, times = 20),
+         row = rep(1:20, each = 5)) %>% 
+  ggplot(aes(x = row, y = column)) +
+  facet_wrap(~box, scales = "free")+
+  geom_point(aes(fill = algae_conc2, size = gpp, shape = midge), col = "black")+
+  scale_shape_manual(values = c(21,22))+
+  scale_color_manual(values = c("firebrick4", "dodgerblue"))+
+  scale_x_continuous(breaks = c(1:20))+
+  scale_fill_viridis_c(trans = "log10")+
+  theme(axis.title = element_blank())
 
-
-#calculate carbon using Amanda's Isotope Data
-dwc = 0.5 #plae holder
-
-
-#increment Summation method to estimate production 
-incsumprod <- function(n1, n2, wt1, wt2, deltaT){
-  g = wt2-wt1 #individual growth
-  Nbar = (n1 + n2)/2 #Average abundance
-  intp = Nbar*g #production over the interval
-  Pd = intp/deltaT #daily production
-  list(g = g, Nbar = Nbar, intp = intp, Pd = Pd)
-}
-
-#Calculate standard errors on midge productivity
-
-#step 1: calculate partial derivatives for delta method
-deriv(~((n1+n2)/2)*(wt2-wt1)/deltaT,
-      c("n1", "wt2", "wt1")) #we assume perfect knowledge of nt and t
-#step 2:  
-#Delta method to propogate error:
-#Sy = sqrt((dy/dx)^2*s^2x + (dz/dx)^2*s^2z + .... + cov)
-prodse <- function(n1, n2, wt1, wt2, deltaT, n1se, w1se, w2se){
-  expr2 = (n1+n2)/2
-  expr3 = wt2-wt1
-  expr9 = expr2/deltaT
-  dn1 = 1/2*expr3/deltaT
-  dw2 = expr9
-  dw1 = expr9
-  P.se = sqrt(dw2^2*w2se^2 + dw1^2*w2se^2)
-  return(P.se)
-}
+# ggpreview(plot = last_plot(), dpi  =1000, width = 10, height= 5, units = "in")
 
 
 
-#calculate midge productivity
-midgeprod <- cm %>% 
-  left_join(cc) %>% 
-  filter(species_name == "tt",
-         day!=0) %>% 
-  group_by(coreid) %>% 
-  mutate(w = weight(body_size)) %>% #estimate dry mass
-  group_by(coreid, day, box, algae_conc) %>% 
-  summarise(wt = meanna(w), #average biomass of a midge (mg)
-            nt = unique(live_tt), #number of individuals in the mesocosm
-            wt.se = sd(w, na.rm = TRUE)/sqrt(nt)) %>% 
-  # combine with initial values
-  bind_cols(cm %>% 
-              filter(species_name == "tt",
-                     day == 0) %>% 
-              group_by(coreid) %>% 
-              add_count() %>% 
-              mutate(w = weight(body_size),
-                     c = w*dwc,
-                     live_tt = n) %>%
+nep %>%
+  filter(day == 22) %>% 
+  ungroup %>% 
+  filter(as.numeric(coreid)<=100) %>% 
+  left_join(nep %>%
+              filter(day == 14) %>% 
               ungroup %>% 
-              group_by(sampledate) %>%
-              summarise(n= n(),
-                        wt1 = mean(w), #weight at t = 0
-                        n1 = mean(live_tt), #number at t = 0
-                        wt1.se = sd(w)/sqrt(n),
-                        nt1.se = sd(live_tt)/sqrt(3)) %>% 
-              select(-sampledate)) %>% 
+              filter(as.numeric(coreid)<=100) %>% 
+              arrange(as.numeric(coreid)) %>% 
+              mutate(column = rep(1:5, times = 20),
+                     row = rep(1:20, each = 5)) %>% 
+              select(coreid, column, row)) %>% 
+  
+  ggplot(aes(x = row, y = column)) +
+  facet_wrap(~box, scales = "free")+
+  geom_point(aes(fill = algae_conc2, size = gpp, shape = midge), col = "black")+
+  scale_shape_manual(values = c(21,22))+
+  scale_color_manual(values = c("firebrick4", "dodgerblue"))+
+  scale_x_continuous(breaks = c(1:20))+
+  scale_fill_viridis_c(trans = "log10")+
+  theme(axis.title = element_blank())
+
+#====Movement patterns====
+cc %>%
   ungroup %>% 
-  mutate(Pd = incsumprod(n1 = n1, n2 = nt, wt1 = wt1, wt2 = wt, deltaT = day)$Pd, #production in mg,
-         g = incsumprod(n1 = n1, n2 = nt, wt1 = wt1, wt2 = wt, deltaT = day)$g,
-         Pd.se = prodse(n1 = n1, n2 = nt, wt1 = wt1, wt2 = wt, deltaT = day, n1se = nt1.se, w1se = wt1.se, w2se = wt.se),
-         Pdc.se = Pd.se*dwc*1000,
-         Pdc = Pd*dwc*1000) #convert from weight to c (mg) then convert to micrograms 
- 
+  filter(as.numeric(coreid)<=100) %>% 
+  arrange(as.numeric(coreid)) %>% 
+  mutate(column = rep(1:5, times = 20),
+         row = rep(1:20, each = 5),
+         diff = ifelse(midge == "Midges", live_tt-18, live_tt),
+         diff = ifelse(diff>0, paste0("+", diff), diff)) %>% 
+  ggplot(aes(x = row, y = column, shape = midge, col = midge))+
+  facet_wrap(~box, scales = "free")+
+  geom_tile(aes(fill = algae_conc2), col = "white")+
+  geom_label(aes(label = diff), size = 5, alpha = 1)+
+  scale_shape_manual(values = c(16,18), )+
+  scale_fill_viridis(trans = "log10")+
+  scale_color_manual(values = c("firebrick4", "dodgerblue"))+
+  scale_x_continuous(breaks = c(1:20))+
+  theme(axis.title = element_blank())
 
-midgeprod2 <- cm %>% 
-  left_join(cc) %>% 
-  filter(species_name == "tt",
-         day==22) %>% 
-  group_by(coreid) %>% 
-  mutate(w = weight(body_size)) %>% #estimate dry mass
-  group_by(coreid, day, box, algae_conc) %>% 
-  summarise(wt = meanna(w), #average biomass of a midge (mg)
-            nt = unique(live_tt), #number of individuals in the mesocosm
-            wt.se = sd(w, na.rm = TRUE)/sqrt(nt)) %>% 
-  left_join(cm %>% 
-              left_join(cc) %>% 
-              filter(species_name == "tt",
-                     day==14) %>% 
-              group_by(coreid) %>% 
-              mutate(w = weight(body_size)) %>% #estimate dry mass
-              group_by(box, algae_conc) %>% 
-              summarise(w0 = meanna(w), #average biomass of a midge (mg)
-                        n0 = unique(live_tt), #number of individuals in the mesocosm
-                        w0.se = sd(w, na.rm = TRUE)/sqrt(n0))) %>% 
-  ungroup %>% 
-  mutate(Pd = incsumprod(n1 = n0, n2 = nt, wt1 = w0, wt2 = wt, deltaT = 8)$Pd, #production in mg,
-         g = incsumprod(n1 = n0, n2 = nt, wt1 = w0, wt2 = wt, deltaT = 8)$g,
-         Pd.se = prodse(n1 = n0, n2 = nt, wt1 = w0, wt2 = wt, deltaT = 8, n1se = nt1.se, w1se = wt1.se, w2se = wt.se),
-         Pdc.se = Pd.se*dwc*1000,
-         Pdc = Pd*dwc*1000) #convert from weight to c (mg) then convert to micrograms 
-
-
-
-#compare measurements of growth (lm) to these estimates
-midgeprod %>% 
-  group_by(day) %>% 
-  mutate(meanw = mean((wt-wt1)/day)) %>% 
-  ggplot(aes((wt-wt1)/day, fill = factor(day)))+
-  geom_histogram(bins = 15, alpha = 0.7)+
-  geom_vline(xintercept = 0, linetype = "dotted")+
-  geom_vline(aes(xintercept = meanw, col = factor(day)))
-
-##Estimate daily production of primary producers in C
-#converting g O2--> C
-#1:1 molar mass
-12/32
-
-pq <- 0.375
-
-#calculate area of mesocosm
-mesor <- 15 #mm
-area <- mesor^2*pi #mm^2
-
-#calculate algal productivity
-algaeprod <- nep %>%
-  mutate(gpp_c = gpp*pq, #g m^-2 h^-1
-         #multiply by 1e6 to convert g to ug and divide by 1e6 to get mm^-2 multiply by 24 to get hourly 
-         gpp_cm = gpp_c*area, #hourly primary production of C (micrograms) in a mesocosm
-         resp_cm = resp*pq*area, #hourly respiration
-         nep_cm = nep*pq*area, #hourly nep 
-         net_daily = 18*nep_cm + 6*resp_cm, #nep over course of day
-         gpp_daily = 18*gpp_cm, #daily GPP
-         resp_daily = 24*resp_cm) #daily respiration
-
-
-apm <- algaeprod %>% 
-  filter(midge == "Midges")
-
-#Set values for transfer efficiencies
-AEa = 1 #arbitrary value set for the assimilation of fixed carbon by algae
-NPEm = 0.54 #Net Production efficiency for T. gracilentus at Myvatn Lindegaard 1994
-FA = 1 #Fraction of assimilated material in midge attributed to algae
-AEm = c(0.1, 0.5, 1) #Assimilation efficiency
-
-
-#Im = (Pm*FA)/(NPE*AE), Where Im = ingestion by midges, Pm = midge productivity, FA = Fraction of algae assimilated, NPE = Net production efficiency, AE = assimilation efficiency
-#when Im = Pa, Where Pa = algal productivity 
-#Pa/(Pm*FA) = NPE*AE
-
-#confirming the slope = NPE*AE
-data.frame(GPP = 0:max(apm$gpp_daily)) %>% 
-  crossing(AE = c(0.1, 0.5, 1)) %>%
-  mutate( NPP = GPP*AEa,
-          Pdc = (NPP*NPEm*AE)/FA) %>% 
-  lm(Pdc~0+NPP:factor(AE), data = .) %>% 
-  summary()
-
-
-
-#====Figure 6: Midge productivity and primary production=====
-#combine estimates of midge production with algae production
-production <- midgeprod %>%  
-  full_join(algaeprod %>% 
-              group_by(coreid, algae_conc2, midge) %>% 
-              # select(-day) %>% 
-              mutate(NPP = gpp_daily*AEa,
-                     NPP.mean = meanna(NPP)) %>% #multiply GPP by AEa (the efficiency at which algae convert fixed carbon into new biomass)
-              summarise(NPP.sd = sd(NPP),
-                        NPP = meanna(NPP))) #average by day
-
-
-#slopes and lines for I/P figure
-IPs = data.frame(AEm = AEm, 
-                 NPEm = NPEm, 
-                 x = max(production$NPP)-5,
-                 slope = AEm*NPEm,
-                 label = paste("AE[m]==", format(AEm, nsmall = 1)),
-                 label2 = "I[m]/P[a] == 1") %>% 
-  mutate(y = x*NPEm*AEm)
-
-
-proda <- production %>% 
-  filter(!is.na(day), midge == "Midges") %>% 
-  mutate(Pdc = ifelse(is.na(Pdc), 0, Pdc),
-         Pdc.se = ifelse(is.na(Pdc), 0, Pdc.se)) %>% 
-  ggplot(aes(x = NPP, y = Pdc))+
-  # facet_wrap(~midge)+
-  geom_hline(yintercept = 0, linetype = "dashed")+
-  geom_errorbar(aes(ymin = Pdc-Pdc.se, ymax = Pdc+Pdc.se, color = algae_conc2))+
-  geom_point(aes(color = algae_conc, shape = factor(day)), fill = "white")+
-  geom_segment(aes(x = 0, y = 0, xend = max(production$NPP)-5, yend =  slope * (max(production$NPP)+5)), data = IPs)+
-  geom_text(aes(x = x, y = y, label = label), parse = TRUE, hjust = 0, vjust = 1, color = "black", data = IPs, size = 3)+
-  geom_text(aes(x = x, y = y, label = label2), parse = TRUE, hjust = 0,vjust = 0, color = "black", data = IPs, size = 3)+
-  labs(x = expression(~P[a]~" \u03BCg C "~d^{-1}),
-       y = expression(~P[m]~" \u03BCg C "~d^{-1}),
-       color = "Initial\n Sediment Quality",
-       shape = "Day")+
-  scale_color_gradient(low = "goldenrod2", high = "darkgreen")+
-  scale_shape_manual(values = c(21, 16))+
-  lims(x = c(0, 200),
-       y = c(NA, 100))+
-  coord_equal()+
-  guides(colour = guide_colourbar(title.position="top", title.hjust = 0.5),
-         shape = guide_legend(title.position="top", title.hjust = 0.5))
-
-
-production %>% 
-  mutate(growth = g*dwc*1000,
-         gd = growth/day) %>% 
-  # filter(midge == "Midges") %>% 
-  # lm(gd~NPP, data = .) %>% summary()
-  ggplot(aes(x = NPP, y = gd))+
-  geom_point()+
-  facet_wrap(~midge)+
-  geom_smooth(method = "lm")+
-  geom_hline(yintercept = 0)
-
-production %>% 
-  filter(midge == "Midges") %>% 
-  mutate(ingestion = Pdc/NPEm) %>% 
-  lm(Pdc~NPP, data = .) %>% 
-  summary()
-
-
-prodb <- midgeprod2 %>% 
-  mutate(gd = g*dwc*1000/8) %>% 
-  left_join(algaeprod %>% 
-              select(coreid, algae_conc2, midge, day, gpp_daily) %>% 
-              group_by(coreid, algae_conc2) %>% 
-              mutate(GPP = gpp_daily,
-                     day = paste0("NPP_", day)) %>%
-              select(-gpp_daily) %>% 
-              spread(day, GPP) %>% 
-              rowwise() %>% 
-              mutate(GPP = meanna(c(NPP_14, NPP_22)), 
-                     deltaGPP = NPP_22-NPP_14)) %>% 
-  filter(!is.na(NPP_22)) %>% 
-  ggplot(aes(x = gd, y = deltaGPP))+
-  facet_wrap(~midge, scales = "free")+
-  geom_hline(yintercept = 0, col = "gray80")+
-  geom_vline(xintercept = 0, col = "gray80")+
-  geom_point()+
-  labs(y = expression("Change in GPP \u03BCg C "~d^{-1}),
-       x = expression("Midge Growth \u03BCg C "~d^{-1}))
-
-
-cowplot::plot_grid(proda, prodb, ncol = 1, rel_heights = c(2/3,1/3))
-# ggpreview(plot = last_plot(), dpi = 650, width = 80, height = 120, units = "mm")
-# ggsave(plot = last_plot(), filename = "Botsch_MG_Fig6.pdf", device = "pdf", dpi = 650, width = 80, height = 80, units = "mm")
-
-
-
-midgeprod2 %>% 
-  left_join(algaeprod %>% 
-              select(coreid, algae_conc2, midge, day, gpp_daily) %>% 
-              group_by(coreid, algae_conc2) %>% 
-              mutate(GPP = gpp_daily,
-                     day = paste0("NPP_", day)) %>%
-              select(-gpp_daily) %>% 
-              spread(day, GPP) %>% 
-              rowwise() %>% 
-              mutate(GPP = meanna(c(NPP_14, NPP_22)), 
-                     deltaGPP = NPP_22-NPP_14)) %>% 
-  filter(!is.na(NPP_22), midge == "No Midges") %>%
-  lm(deltaGPP~Pdc, data = .) %>% 
-  summary()
-
-midgeprod2 %>% 
-  left_join(algaeprod %>% 
-              select(coreid, algae_conc2, midge, day, gpp_daily) %>% 
-              group_by(coreid, algae_conc2) %>% 
-              mutate(GPP = gpp_daily,
-                     day = paste0("NPP_", day)) %>%
-              select(-gpp_daily) %>% 
-              spread(day, GPP) %>% 
-              rowwise() %>% 
-              mutate(GPP = meanna(c(NPP_14, NPP_22)), 
-                     deltaGPP = NPP_22-NPP_14,
-                     rel_deltaGPP = deltaGPP/GPP)) %>% 
-  filter(!is.na(NPP_22), midge == "No Midges") %>%
-  lm(rel_deltaGPP~Pdc, data = .) %>% 
-  summary()
-
-
-midgeprod %>% 
-  mutate(growth = g*dwc*1000,
-         gd = growth/day) %>% 
-  left_join(algaeprod %>% 
-              select(coreid, algae_conc2, midge, day, gpp_daily) %>% 
-              group_by(coreid, algae_conc2) %>% 
-              mutate(NPP = gpp_daily*AEa,
-                     day = paste0("NPP_", day)) %>%
-              select(-gpp_daily) %>% 
-              spread(day, NPP) %>% 
-              rowwise() %>% 
-              mutate(NPP = meanna(c(NPP_14, NPP_22)), 
-                     deltaNPP = NPP_22-NPP_14)) %>% 
-  filter(!is.na(NPP_22),
-         midge == "Midges") %>%
-  lm(deltaNPP~gd, data = .) %>% 
-  summary()
-#in progress: looking at changes from first incubation to second 
-cm %>% 
-  left_join(cc) %>% 
-  filter(species_name == "tt",
-         day!=22) %>% 
-  group_by(coreid) %>% 
-  mutate(w = weight(body_size)) %>% #estimate dry mass
-  group_by(coreid, day, box, algae_conc) %>% 
-  summarise(wt = meanna(w), #average biomass of a midge (mg)
-            nt = unique(live_tt), #number of individuals in the mesocosm
-            wt.se = sd(w, na.rm = TRUE)/sqrt(nt)) %>% 
-  # combine with initial values
-  bind_cols(cm %>% 
-              left_join(cc) %>% 
-              filter(species_name == "tt",
-                     day == 14) %>% 
-              mutate(w = weight(body_size),
-                     c = w*dwc) %>%
-              group_by(algae_conc, midge) %>%
-              summarise(samps = n_distinct(coreid),
-                        n= unique(live_tt),
-                        wt1 = meanna(w), #weight at t = 0
-                        n1 = meanna(n), #number at t = 0
-                        wt1.se = sd(w)/sqrt(n),
-                        nt1.se = sd(n)/sqrt(samps)) %>% 
-              select(-sampledate)) %>% 
-  ungroup %>% 
-  mutate(Pd = incsumprod(n1 = n1, n2 = nt, wt1 = wt1, wt2 = wt, deltaT = day)$Pd, #production in mg,
-         g = incsumprod(n1 = n1, n2 = nt, wt1 = wt1, wt2 = wt, deltaT = day)$g,
-         Pd.se = prodse(n1 = n1, n2 = nt, wt1 = wt1, wt2 = wt, deltaT = day, n1se = nt1.se, w1se = wt1.se, w2se = wt.se),
-         Pdc.se = Pd.se*dwc*1000,
-         Pdc = Pd*dwc*1000) #convert from weight to c (mg) then convert to micrograms 
-
-
-
-midgeprod %>% 
-  left_join(algaeprod %>% 
-              select(coreid, algae_conc2, day, gpp_daily) %>% 
-              group_by(coreid, algae_conc2) %>% 
-              mutate(NPP = gpp_daily*AEa,
-                     day = paste0("NPP_", day)) %>%
-              select(-gpp_daily) %>% 
-              spread(day, NPP) %>% 
-              rowwise() %>% 
-              mutate(NPP = meanna(c(NPP_14, NPP_22)))) %>% 
-  ggplot(aes(y = Pdc, x = NPP))+
-  geom_errorbar(aes(xmin = NPP_14, xmax = NPP_22, col = algae_conc2))+
-  geom_errorbar(aes(ymin = Pdc-Pdc.se, ymax = Pdc.se+Pdc, col = algae_conc2))+
-  geom_hline(yintercept = 0, linetype = "dashed")+
-  geom_point(aes(col = algae_conc2))+
-  geom_segment(aes(x = 0, y = 0, xend = max(production$NPP)+5, yend =  slope * (max(production$NPP)+5)), data = IPs)+
-  labs(x = expression("Algal Productivity \u03BCg C "~d^{-1}),
-       y = expression("Midge Productivity \u03BCg C "~d^{-1}),
-       color = "Initial Sediment Quality",
-       shape = "Day")+
-  scale_color_gradient(low = "goldenrod2", high = "darkgreen", trans = "log10")+
-  scale_fill_gradient(low = "goldenrod2", high = "darkgreen", trans = "log10", guide = FALSE)+
-  facet_wrap(~day)+
-  coord_equal()+
-  guides(colour = guide_colourbar(title.position="top", title.hjust = 0.5),
-         shape = guide_legend(title.position="top", title.hjust = 0.5))
-
-
-
-#What is the AE if they only eat algae??
-prodmod1 <- lm(Pdc~NPP, 
-              data = production)
-
-coef(prodmod1)[2]/NPEm
-
-prodmod2<- lm(Pdc~NPP, 
-               weights = 1/Pdc.se^2,
-               data = production)
-coef(prodmod2)[2]/NPEm
-
-prodmod3 <- lm(Pdc~NPP:factor(day), 
-   data = production)
-
-coef(prodmod3)[2]/NPEm
-coef(prodmod3)[3]/NPEm
-
-prodmod4 <- lm(Pdc~NPP:factor(day), 
-               weights = 1/Pdc.se^2,
-               data = production)
-
-coef(prodmod4)[2]/NPEm
-coef(prodmod4)[3]/NPEm
-
-
-production %>% 
-  mutate(lower = Pdc-2*Pdc.se) %>% 
-  filter(lower/(NPEm*1)>NPP)
-
-#====Q3: Supplement====
-# using day of incubation
-sim%>% 
-  ggplot(aes(x = NPP, y = Pdc))+
-  facet_wrap(~paste("AEm = ", AE), ncol = 5)+
-  stat_contour(aes(z = ip2, fill = ip2, linetype = factor(..level..)), col = "black", binwidth = 0.25, show.legend = FALSE)+
-  geom_hline(yintercept = 0, col = "black")+
-  #add points of observed values
-  geom_point(aes(shape = as.character(day), col = algae_conc), alpha = 0.7, fill = "black", 
-             data = midgeprod %>%  
-               left_join(algaeprod %>% 
-                           mutate(NPP = gpp_daily*AEa)))+
-  geom_errorbar(aes(ymin = Pdc-Pdc.se, ymax = Pdc+Pdc.se, col = algae_conc), width = 0,
-                data = midgeprod %>%
-                  left_join(algaeprod %>%
-                              mutate(NPP = gpp_daily*AEa,
-                                     ip2 = NA)))+
-  labs(x = expression("Algal Productivity \u03BCg C "~d^{-1}),
-       y = expression("Midge Productivity \u03BCg C "~d^{-1}),
-       fill = expression(I[m]/P[a]),
-       color = "Initial Sediment Quality",
-       shape = "Day")+
-  scale_color_viridis_c()+
-  # theme(legend.position = "right")+
-  scale_linetype_manual(values = c("dotted", "dashed", "solid"))
-
-
-#same plot but using only gpp values from day 14
-sim%>% 
-  ggplot(aes(x = NPP, y = Pdc, fill = ip2))+
-  facet_wrap(~paste("AEm = ", AE), ncol = 5)+
-  stat_contour(aes(z = ip2, linetype = factor(..level..)), col = "black", binwidth = 0.25, show.legend = FALSE)+
-  geom_hline(yintercept = 0, col = "black")+
-  #add points of observed values
-  geom_point(aes(shape = as.character(day), col = algae_conc), alpha = 0.7, fill = "black", 
-             data = midgeprod %>%  
-               left_join(algaeprod %>% filter(day != 22) %>% select(-day) %>% 
-                           mutate(NPP = gpp_daily*AEa)))+
-  labs(x = expression("Algal Productivity \u03BCg C "~d^{-1}),
-       y = expression("Midge Productivity \u03BCg C "~d^{-1}),
-       fill = expression(I[m]/P[a]),
-       color = "Initial Sediment Quality",
-       shape = "Day")+
-  scale_color_viridis_c()+
-  # theme(legend.position = "right")+
-  scale_linetype_manual(values = c("dotted", "dashed", "solid"))
-
-
-
-
+# ggpreview(plot = last_plot(), dpi  =1000, width = 10, height= 5, units = "in")
