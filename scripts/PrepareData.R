@@ -190,6 +190,7 @@ cm <- cm_raw %>%
          body_size = (body_size/body_size_mag)/conversion *1000,
          day = if_else(sampledate == "2020-08-21", 14,
                         if_else(sampledate == "2020-08-07", 0, 22))) %>% 
+  filter(head_size>70) %>%  #first instar head size is 75. there is one individual with a lower head size that was damaged.
   select(coreid, sampledate, day, species_name, head_size, body_size, instar, comments)
 
 
@@ -311,15 +312,38 @@ hobo %>%
   mutate(hour = hour(date_time),
          date = as.Date(date_time)) %>% 
   gather(var, val, -hour, -date, -date_time) %>% 
-  left_join(nep1 %>% 
-              group_by(dark_light, date) %>% 
-              summarise(dttm_start = min(dttm_start),
-                        dttm_end = max(dttm_end))) %>% 
-  filter(is.na(dark_light)) %>% 
+  filter(! date %in% unique(c(as.Date(nep1$dttm_start), as.Date(nep1$dttm_end)))) %>% 
+  group_by(date, hour, var) %>% 
+  summarise(val = mean(val)) %>% 
+  mutate(var = ifelse(var == "lux", "Irradiance (Lumens m-2)", "Temperature (°C)")) %>% 
   ggplot(aes(x = hour, y = val, group = date, col = date))+
-  facet_wrap(~var, scales = "free")+
-  geom_smooth(alpha = 0.5, size = 0.7, se = FALSE)
+  facet_wrap(~var, scales = "free", strip.position = "left")+
+  geom_line(alpha = 0.5, size = 0.7)+
+  scale_color_gradient2(low = "dodgerblue", high = "firebrick", trans = "date", mid = "darkorchid", midpoint = as.numeric(mean(as.Date(hobo$date_time))))+
+  labs(y = "",
+       x = "Hour")+
+  theme(legend.key.width = unit(2, "cm"),
+        strip.placement = "outside")
 
+
+hobo %>% 
+  mutate(hour = hour(date_time),
+         date = as.Date(date_time)) %>% 
+  group_by(date) %>% 
+  gather(var, val, -hour, -date, -date_time) %>% 
+  filter(! date %in% unique(c(as.Date(nep1$dttm_start), as.Date(nep1$dttm_end)))) %>% 
+  group_by(date, var) %>% 
+  summarise(max = max(val),
+            min = min(val),
+            starthr = min(hour),
+            endhr = max(hour)) %>% 
+  filter(starthr == 0, endhr == 23) %>% 
+  group_by(var) %>% 
+  summarise(day = mean(max),
+            night = mean(min),
+            sdday = sd(max),
+            sdnight = sd(min))
+  
 
 
 hobo %>% 
