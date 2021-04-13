@@ -5,6 +5,7 @@ library(viridis)
 library(gridExtra)
 library(lme4)
 library(car)
+library(broom)
 
 #Define function to give NA if all NAs else give mean
 meanna <- function(x){
@@ -44,6 +45,12 @@ cm_raw <- read_csv("clean data/MG_cm.csv")
 cc_raw <- read_csv("clean data/MG_cc.csv")
 
 
+#====create data frame to predict model response variables ====
+
+topredict <- data.frame(algae_conc2 = rep(unique(meta$algae_conc2), 4),
+                        midge = rep(rep(c("Midges", "No Midges"), each = 10), 2),
+                        box = rep(c("1", "2"), each = 20))
+
 #====Figure 1: Chorophyll and organic content in stock sediment====
 omplot <- om %>% 
   left_join(meta) %>% 
@@ -77,7 +84,7 @@ uncorrchlplot <- chl %>%
 fig1 <- grid.arrange(corrchlplot, omplot, nrow  = 2)
 plot(fig1)
 
-ggpreview(plot = fig1, dpi = 650, width = 80, height = 100, units = "mm")
+# ggpreview(plot = fig1, dpi = 650, width = 80, height = 100, units = "mm")
 # ggsave(plot = fig1, filename = "Botsch_MG_Fig1.pdf", dpi = 650, device = "pdf", width = 80, height = 80, units = "mm")
 
 
@@ -97,7 +104,7 @@ nep14 <- nep %>%
   mutate(midge = fct_relevel(midge, c("No Midges", "Midges")))
 
 g14log <- lm(gpp~log(algae_conc2)*midge+box, data = nep14) 
-summary(g14log)
+summary(g14log) 
 # plot(g14log)
 
 
@@ -110,10 +117,40 @@ summary(g22log)
 # plot(g22log)
 
 
+predicted14 <- topredict %>% 
+  mutate(gpp = predict(g14log, ., type = "response")) %>% 
+  group_by(algae_conc2, midge) %>% 
+  summarise(gpp = mean(gpp)) %>% 
+  mutate(day = "Day 14")
 
-#====Do the slopes differ between the two sample dates====
+predicted22 <- topredict %>% 
+  mutate(gpp = predict(g22log, ., type = "response")) %>% 
+  group_by(algae_conc2, midge) %>% 
+  summarise(gpp = mean(gpp)) %>% 
+  mutate(day = "Day 22")
+
+gpredict <- rbind(predicted14, predicted22)
 
 
+
+#====Figure 2: GPP====
+nepv2.1 <- nep %>% 
+  mutate(day = paste("Day", day)) %>% 
+  ggplot(aes(x = algae_conc2, y = gpp, fill = midge))+
+  facet_wrap(~day, ncol = 1)+
+  geom_point(size  = 2, alpha = 0.75, shape = 21)+
+  geom_line(aes(color = midge), size = 0.7, data = gpredict)+
+  scale_fill_manual(values = c("black", "gray60"))+
+  scale_color_manual(values = c("black", "gray60"))+
+  labs(x = "Initial Resource Availability",
+       y = expression("GPP "~(g~O[2]~m^{-2}~hr^{-1})),
+       color = "",
+       fill = "")+
+  scale_x_continuous(trans = "log", breaks = c(0.01, 0.1, 1))+
+  theme(legend.position = c(0.2,0.95),
+        legend.text.align = 0,
+        legend.key = element_rect(fill = NA),
+        legend.background = element_rect(fill = NA, color = NA))
 
 
 #estimate for effect of initial food availability on gpp day 14
@@ -147,29 +184,12 @@ gppbootfig <- data.frame(estimate = c(axn_14, axn_22, g14log$coefficients["log(a
   theme(legend.position = "none")
 
 
-#Figure 2: GPP 
-nepv2.1 <- nep %>% 
-  mutate(day = paste("Day", day)) %>% 
-  ggplot(aes(x = algae_conc2, y = gpp, fill = midge))+
-  facet_wrap(~day, ncol = 1)+
-  geom_point(size  = 2, alpha = 0.7, shape = 21)+
-  geom_smooth(aes(color = midge), method = "lm", size = 0.75, se = FALSE)+
-  scale_fill_manual(values = c("black", "gray60"))+
-  scale_color_manual(values = c("black", "gray60"))+
-  labs(x = "Initial Resource Availability",
-       y = expression("GPP "~(g~O[2]~m^{-2}~hr^{-1})),
-       color = "",
-       fill = "")+
-  scale_x_continuous(trans = "log", breaks = c(0.01, 0.1, 1))+
-  theme(legend.position = c(0.2,0.95),
-        legend.text.align = 0,
-        legend.key = element_rect(fill = NA),
-        legend.background = element_rect(fill = NA, color = NA))
+
 
 
 cowplot::plot_grid(nepv2.1, gppbootfig, nrow = 2, rel_heights = c(2/3,1/3))
 
-ggpreview(plot = last_plot(), dpi = 650, width = 80, height = 120, units = "mm")
+# ggpreview(plot = last_plot(), dpi = 650, width = 80, height = 120, units = "mm")
 # ggsave(plot = last_plot(), filename = "Botsch_MG_Fig2.pdf", device = "pdf", dpi = 650, width = 80, height = 120, units = "mm")
 
 
@@ -219,6 +239,12 @@ summary(r14log)
 r22log <- lm(resp~ log(algae_conc2)*midge + box, data = nep22)
 summary(r22log)
 
+nep14log <- lm(nep~ log(algae_conc2)*midge + box, data = nep14)
+summary(nep14log)
+
+nep22log <- lm(nep~ log(algae_conc2)*midge + box, data = nep22)
+summary(nep22log)
+
 nep %>% 
   mutate(day = paste("Day", day,  sep = " ")) %>% 
   ggplot(aes(x = -resp, y = gpp, fill = algae_conc2))+
@@ -262,6 +288,23 @@ nm22log <- glm(live_tt~log(algae_conc2)*midge+box,
 summary(nm22log)
 # plot(nm22log)
 
+
+#extract fits
+
+predicted14 <- topredict %>% 
+  mutate(fit = predict(nm14log, ., type = "link")) %>% 
+  group_by(algae_conc2, midge) %>% 
+  summarise(live_tt = exp(mean(fit))) %>% 
+  mutate(day = "Day 14")
+
+predicted22 <- topredict %>% 
+  mutate(fit = predict(nm22log, ., type = "link")) %>% 
+  group_by(algae_conc2, midge) %>% 
+  summarise(live_tt = exp(mean(fit))) %>% 
+  mutate(day = "Day 22")
+
+nmpredict <- rbind(predicted14, predicted22)
+
 #how many midges out of the total stocked (1,000) survived?
 cc %>% 
   filter(!coreid %in% c(108, 119, 152)) %>% 
@@ -274,6 +317,9 @@ cc %>%
 
 646/883
 
+
+
+
 #====Figure 3: Number of Midges====
 
 fig3.v1 <- cc %>% 
@@ -283,7 +329,8 @@ fig3.v1 <- cc %>%
   facet_wrap(~day, ncol = 1)+
   geom_point(size  = 2, alpha = 0.7, shape = 21)+
   geom_hline(yintercept = 20, linetype = "dashed", alpha = 0.5)+
-  geom_smooth(aes(color = midge), method = "lm", size = 0.75, se = FALSE)+
+  # geom_smooth(aes(color = midge), method = "glm", size = 0.75, se = FALSE, method.args = list(family = quasipoisson()) )+
+  geom_line(aes(color = midge), data = nmpredict)+
   scale_fill_manual(values = c("black", "gray60"))+
   scale_color_manual(values = c("black", "gray60"))+
   labs(x = "Initial Resource Availability",
@@ -296,71 +343,6 @@ fig3.v1 <- cc %>%
         legend.key = element_rect(fill = NA),
         legend.background = element_rect(fill = NA, color = NA),
         legend.direction = "horizontal")
-
-
-
-fig3.v2 <- cc %>% 
-  filter(day %in% c(14, 22)) %>% 
-  mutate(day = paste("Day", day)) %>% 
-  ggplot(aes(x = algae_conc2, y = live_tt, fill = day))+
-  facet_wrap(~midge, ncol = 1, scales = "free")+
-  geom_jitter(size  = 2, alpha = 0.5, shape = 21, width = 0.0005, height = 0)+
-  geom_smooth(aes(color = day), method = "lm", size = 0.75, alpha = 0.5, se = FALSE)+
-  scale_fill_manual(values = c("#F4A582", "#CA0020"))+
-  scale_color_manual(values = c("#F4A582", "#CA0020"))+
-  labs(x = "Initial Resource Availability",
-       y = "Live Tanytarsini",
-       color = "",
-       fill = "")+
-  lims(y = c(0,NA))+
-  scale_x_continuous(trans = "log", breaks = c(0.01, 0.1, 1))+
-  theme(legend.position = c(0.3,0.95),
-        legend.text.align = 0,
-        legend.key = element_rect(fill = NA),
-        legend.background = element_rect(fill = NA, color = NA),
-        legend.direction = "horizontal")
-
-# ggpreview(plot = last_plot(), dpi = 650, width = 80, height = 120, units = "mm")
-# ggsave(plot = last_plot(), filename = "Botsch_MG_Fig3.pdf", device = "pdf", dpi = 650, width = 80, height = 120, units = "mm")
-
-
-cc %>% 
-  left_join(nep) %>% 
-  filter(day %in% c(14, 22)) %>% 
-  mutate(day = paste("Day", day)) %>% 
-  ggplot(aes(x = algae_conc2, y = live_tt, col = gpp, shape = day, linetype = day))+
-  facet_wrap(~midge, scales = "free")+
-  geom_jitter(size = 2, alpha = 0.6, width = 0.0005, height = 0.3)+
-  geom_smooth(method = "lm", se = FALSE, size = 0.6, col = "black")+
-  scale_color_viridis_c(trans = "log10")+
-  scale_shape_manual(values = c(21,16))+
-  scale_linetype_manual(values = c("dashed", "solid"), guide = NULL)+
-  labs(y = "Live Tanytarsini",
-       x = "Initial Resource Availability",
-       fill = expression(GPP(g~O[2]~m^{-2}~hr^{-1})~" "))+
-  scale_x_continuous(trans = "log", breaks = c(0.01, 0.1, 1))+
-  lims(y = c(0, NA))
-
-
-
-
-
-cc %>%
-  ungroup %>% 
-  filter(as.numeric(coreid)<=100) %>% 
-  arrange(as.numeric(coreid)) %>% 
-  mutate(column = rep(1:5, times = 20),
-         row = rep(1:20, each = 5),
-         diff = ifelse(midge == "Midges", live_tt-20, live_tt)) %>% 
-  ggplot(aes(x = row, y = column, shape = midge, col = midge))+
-  facet_grid(day~box, scales = "free")+
-  geom_tile(aes(fill = algae_conc2), col = "white")+
-  geom_label(aes(label = live_tt), size = 5, alpha = 1)+
-  scale_shape_manual(values = c(16,18), )+
-  scale_fill_viridis(trans = "log10")+
-  scale_color_manual(values = c("firebrick4", "dodgerblue"))+
-  scale_x_continuous(breaks = c(1:20))+
-  theme(axis.title = element_blank())
 
 
 #estimate for effect of initial food availability on gpp day 14
@@ -427,51 +409,114 @@ p2 <- cm %>%
          day!= 0) %>%  #remove the four non-tanytarsini
   add_count(coreid, name = "measured") %>% 
   group_by(coreid, day, midge, algae_conc2, box, instar, measured) %>% 
-  count(instar, name = "s2") %>% 
-  filter(instar == 2) %>% 
-  mutate(prop = s2/measured)
-
-
-#====Figure 4: Instar====
-
-p2 %>% 
-  mutate(day = paste("Day", day)) %>% 
-  ggplot(aes(y = prop, x = algae_conc2))+
-  geom_point(shape = 21, alpha = 0.5, fill = "gray20", size = 2)+
-  geom_hline(yintercept = startingprop)+
-  facet_grid(midge~day)+
-  lims(y = c(0,1))+
-  labs(x = "Initial Resource Availability",
-       y = "Proportion of Larval Midges in 2nd Instar")+
-  theme(legend.position = "bottom")+
-  scale_x_continuous(trans = "log", breaks = c(0.01, 0.1, 1))
-
-# ggpreview(plot = last_plot(), dpi = 650, width = 80, height = 120, units = "mm")
-# ggsave(plot = last_plot(), filename = "Botsch_MG_Fig4.pdf", device = "pdf", dpi = 650, width = 80, height = 120, units = "mm")
-
+  count(instar, name = "count") %>% 
+  mutate(instar = paste0("s", instar)) %>% 
+  spread(instar, count, fill = 0) %>% 
+  mutate(prop = s2/measured,
+         others = s3+s4)
 
 #subset for day 14
 p314 <- p2 %>% 
   filter(day == 14) %>% 
   mutate(midge = factor(midge, levels = c("Midges", "No Midges")))
 
-prop14log <- glm(prop~log(algae_conc2)*midge+box, 
+prop14log <- glm(cbind(s2, others) ~log(algae_conc2)*midge+box, 
                  data = p314, 
                  family = quasibinomial())
 
 summary(prop14log)
 # plot(prop14log)
 
+
+
 #subset for day 22
 p322 <- p2 %>% 
   filter(day == 22) %>% 
   mutate(midge = factor(midge, levels = c("Midges", "No Midges")))
 
-prop22log <- glm(prop~log(algae_conc2)*midge+box, 
+prop22log <- glm(cbind(s2, others) ~log(algae_conc2)*midge+box, 
                  data = p322, 
                  family = quasibinomial())
 summary(prop22log)
 # plot(prop22log)
+
+predicted14 <- topredict %>% 
+  mutate(fit = predict(prop14log, ., type = "link")) %>% 
+  group_by(algae_conc2, midge) %>% 
+  summarise(prop = exp(mean(fit))) %>% 
+  mutate(day = "Day 14")
+
+predicted22 <- topredict %>% 
+  mutate(fit = predict(prop22log, ., type = "link")) %>% 
+  group_by(algae_conc2, midge) %>% 
+  summarise(prop = exp(mean(fit))) %>% 
+  mutate(day = "Day 22")
+
+propredict <- rbind(predicted14, predicted22)
+
+
+
+#====Figure 4: Instar====
+
+fig4 <- p2 %>% 
+  mutate(day = paste("Day", day)) %>% 
+  ggplot(aes(y = prop, x = algae_conc2))+
+  geom_point(aes(fill = midge), shape = 21, alpha = 0.75, size = 2, position = position_jitter(width = 0.15, height = 0))+
+  geom_line(aes(color = midge), data = propredict)+
+  geom_hline(yintercept = startingprop, alpha = 0.75)+
+  facet_wrap(~day, nrow = 2)+
+  lims(y = c(0,1))+
+  labs(x = "Initial Resource Availability",
+       y = "Proportion of Larval Midges in 2nd Instar",
+       color = NULL,
+       fill = NULL)+
+  scale_color_manual(values = c("black", "gray60"))+
+  scale_fill_manual(values = c("black", "gray60"))+
+  theme(legend.position = "bottom")+
+  scale_x_continuous(trans = "log", breaks = c(0.01, 0.1, 1))+
+  theme(legend.position = c(0.20,0.95),
+        legend.text.align = 0,
+        legend.key = element_rect(fill = NA),
+        legend.background = element_rect(fill = NA, color = NA),
+        legend.direction = "vertical")
+
+fig4
+ggpreview(plot = last_plot(), dpi = 650, width = 80, height = 120, units = "mm")
+# ggsave(plot = last_plot(), filename = "Botsch_MG_Fig4.pdf", device = "pdf", dpi = 650, width = 80, height = 120, units = "mm")
+
+
+#estimate for effect of initial food availability on gpp day 14
+prop_axn_14 <- as.numeric(prop14log$coefficients[5] + prop14log$coefficients[2])
+
+#standard error of day 14 estimate
+prop_axn_14se <- sqrt(vcov(prop14log)[2,2] + vcov(prop14log)[5,5] + 2*vcov(prop14log)[2,5])
+
+#print
+c(estimate = prop_axn_14, se = prop_axn_14se)
+
+prop_axn_22 <- as.numeric(prop22log$coefficients[5] + prop22log$coefficients[2])
+
+prop_axn_22se <- sqrt(vcov(prop22log)[2,2] + vcov(prop22log)[5,5] + 2*vcov(prop22log)[2,5])
+
+c(estimate = prop_axn_22, se = prop_axn_22se)
+
+
+propbootfig <- data.frame(estimate = c(prop_axn_14, prop_axn_22, prop14log$coefficients["log(algae_conc2)"], prop22log$coefficients["log(algae_conc2)"]), 
+                        se = c(prop_axn_14se, prop_axn_22se, coef(summary(prop14log))["log(algae_conc2)", "Std. Error"], coef(summary(prop22log))["log(algae_conc2)", "Std. Error"]), 
+                        day = c("Day 14", "Day 22", "Day 14", "Day 22"), 
+                        midge = c("No Midges", "No Midges", "Midges", "Midges")) %>% 
+  mutate(midge = fct_relevel(midge, c("No Midges", "Midges"))) %>% 
+  ggplot(aes(x = estimate, xmin = estimate-se, xmax = estimate+se, midge, col = day))+
+  geom_vline(xintercept = 0)+
+  geom_pointrange(position = position_dodge(width = 0.4))+
+  geom_text(aes(label = day, x = estimate-se), hjust = 0, vjust = 2, data = . %>% filter(midge == "No Midges"), size = (5/14)*10*0.8, family = "", fontface = "plain", position = position_dodge(width = 0.4))+
+  scale_color_manual(values = c("#F4A582", "#CA0020"))+
+  labs(y = "", 
+       x = "Effect of Initial Resource Availability")+
+  theme(legend.position = "none")
+
+cowplot::plot_grid(fig4, propbootfig, nrow = 2, rel_heights = c(2/3,1/3))
+# ggpreview(plot = last_plot(), dpi = 650, width = 80, height = 120, units = "mm")
 
 
 ##====Q2.3: Midge Length====
@@ -507,8 +552,23 @@ bl22log <- lmer(body_size~log(algae_conc2)*midge+box +
 summary(bl22log)
 # plot(bl22log)
 
-Anova(bl22log, type = "3", test.statistic = "F")
+Anova(bl22log, type = "3", test.statistic = "F") 
 Anova(bl22log, type = "2", test.statistic = "F")
+
+
+predicted14 <- topredict %>% 
+  mutate(fit = predict(bl14log, newdata = ., re.form = NA, type = "response")) %>% 
+  group_by(algae_conc2, midge) %>% 
+  summarise(body_size = mean(fit)) %>% 
+  mutate(day = "Day 14")
+
+predicted22 <- topredict %>% 
+  mutate(fit = predict(bl22log, newdata = ., re.form = NA, type = "response")) %>% 
+  group_by(algae_conc2, midge) %>% 
+  summarise(body_size = mean(fit)) %>% 
+  mutate(day = "Day 22")
+
+blpredict <- rbind(predicted14, predicted22)
 
 
 #====Figure 5: Body Length====
@@ -525,7 +585,7 @@ blfig <- l3 %>%
   facet_wrap(~day, ncol = 1)+
   geom_hline(yintercept = start_length, linetype = 2, size = 0.5)+
   geom_point(aes(fill = midge), size  = 1.5, alpha = 0.7, shape = 21, stroke = 0.2, position = position_jitterdodge(dodge.width = 0.15, jitter.width = 0.1))+
-  geom_smooth(aes(color = midge), method = "lm", size = 0.65, se = FALSE)+
+  geom_line(aes(col = midge), size = 0.7, data = blpredict)+
   scale_fill_manual(values = c("black", "gray60"))+
   scale_color_manual(values = c("black", "gray60"))+
   labs(y = "Midge Body Length (mm)",
@@ -573,18 +633,38 @@ bl_slopes <- data.frame(estimate = c(blaxn_14, blaxn_22, fixef(bl14log)["log(alg
 cowplot::plot_grid(blfig, bl_slopes, nrow = 2, rel_heights = c(2/3,1/3))
 
 
-ggpreview(plot = last_plot(), dpi = 650, width = 80, height = 100, units = "mm")
+# ggpreview(plot = last_plot(), dpi = 650, width = 80, height = 100, units = "mm")
 # ggsave(plot = last_plot(), filename = "Botsch_MG_Fig5.pdf", device = "pdf", dpi = 650, width = 80, height = 80, units = "mm")
 
 
+
+
+
+#====Print all Model outputs to a csv======
+#extract LMs (LMERs more complicated)
+# tidy(g14log) %>% mutate(response = "GPP", day = "14") %>%
+#   rbind(tidy(g22log) %>% mutate(response = "GPP", day = "22")) %>%
+#   rbind(tidy(nm14log) %>% mutate(response = "# Midges", day = "14")) %>%
+#   rbind(tidy(nm22log) %>% mutate(response = "# Midges", day = "22")) %>%
+#   rbind(tidy(prop14log) %>% mutate(response = "proportion 2nd instar", day = "14")) %>%
+#   rbind(tidy(prop22log) %>% mutate(response = "proportion 2nd instar", day = "22")) %>%
+#   mutate(estimate = format(estimate, digits = 2),
+#          std.error = format(std.error, digits = 2),
+#          statistic = round(statistic, digits = 2),
+#          p.value = format(p.value, digits = 2)) %>%
+#   write_csv(. , "lmoutput.csv")
+
+  
+
+#===============================================
 
 ##====Q2.3b Midge Length Alternate====
 #3rd instars averaged
 bl14log2 <- lm(body_size~log(algae_conc2)*midge+box,
                weights = live_tt,
-                data = l314 %>% 
-                  group_by(algae_conc2, midge, box) %>% 
-                summarise(body_size = meanna(body_size)) %>% 
+               data = l314 %>% 
+                 group_by(algae_conc2, midge, box) %>% 
+                 summarise(body_size = meanna(body_size)) %>% 
                  left_join(cc)) 
 
 summary(bl14log2)
@@ -593,7 +673,7 @@ summary(bl14log2)
 
 bl22log2 <- lm(body_size~log(algae_conc2)*midge+box, 
                weights = live_tt,
-                data = l322 %>% 
+               data = l322 %>% 
                  group_by(algae_conc2, midge, box) %>% 
                  summarise(body_size = meanna(body_size)) %>% 
                  left_join(cc))
@@ -665,8 +745,8 @@ cm %>%
 
 lmer(body_size~log(algae_conc2)*factor(day)+box+
        (1|coreid), 
-   data = cm %>% 
-     filter(midge == "Midges", instar  == 3)) %>% Anova(type = "3", test.statistic = "F")
+     data = cm %>% 
+       filter(midge == "Midges", instar  == 3)) %>% Anova(type = "3", test.statistic = "F")
 
 
 lm(body_size~log(algae_conc2)*factor(day)+box, 
