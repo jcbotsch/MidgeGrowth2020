@@ -20,6 +20,13 @@ meanna <- function(x){
   }
 }
 
+ggpreview <- function(...) {
+  fname <- tempfile(fileext = ".png")
+  ggsave(filename = fname, ...)
+  system2("open", fname)
+  invisible(NULL)
+}
+
 #====set aesthetics====
 theme_set(theme_bw()+
             theme(panel.grid = element_blank(),
@@ -277,19 +284,27 @@ hobo %>%
 
 
 hobo %>% 
-  gather(var, val, -date_time) %>% 
+  gather(var, val, -date_time) %>%
+  mutate(var = ifelse(var == "temp", "Air Temperature (°C)",
+                      "Lux")) %>% 
   ggplot()+
   facet_wrap(~var, scales = "free_y", strip.position = "left", ncol = 1)+
   geom_rect(aes(xmin = dttm_start, xmax =dttm_end, fill = dark_light, ymin = -Inf, ymax = Inf), 
             data = nep1 %>% 
               group_by(dark_light, date) %>% 
               summarise(dttm_start = min(dttm_start),
-                        dttm_end = max(dttm_end)))+
+                        dttm_end = max(dttm_end)),
+            alpha = 0.8)+
   geom_line(aes(x = date_time, y = val))+
-  theme(strip.placement = "outside")+
+  theme(strip.placement = "outside",
+        legend.position = "none")+
   labs(x = "Date",
        y = NULL,
-       fill = "")
+       fill = "")+
+  scale_fill_viridis_d()
+
+# ggpreview(plot = last_plot(), dpi = 650, width = 120, height = 80, units = "mm")
+
 
 
 hobo %>% 
@@ -315,15 +330,18 @@ hobo %>%
   filter(! date %in% unique(c(as.Date(nep1$dttm_start), as.Date(nep1$dttm_end)))) %>% 
   group_by(date, hour, var) %>% 
   summarise(val = mean(val)) %>% 
-  mutate(var = ifelse(var == "lux", "Irradiance (Lumens m-2)", "Temperature (°C)")) %>% 
+  mutate(var = ifelse(var == "lux", "Irradiance (Lux)", "Temperature (°C)"),
+         box = ifelse(date>="2020-08-20", "Top", "Bottom")) %>% 
   ggplot(aes(x = hour, y = val, group = date, col = date))+
-  facet_wrap(~var, scales = "free", strip.position = "left")+
+  facet_grid(var~box, scales = "free_y", switch = "y")+
   geom_line(alpha = 0.5, size = 0.7)+
   scale_color_gradient2(low = "dodgerblue", high = "firebrick", trans = "date", mid = "darkorchid", midpoint = as.numeric(mean(as.Date(hobo$date_time))))+
   labs(y = "",
-       x = "Hour")+
-  theme(legend.key.width = unit(2, "cm"),
+       x = "Hour",
+       color = NULL)+
+  theme(
         strip.placement = "outside")
+ggpreview(plot = last_plot(), dpi = 650, width = 120, height = 80, units = "mm")
 
 
 hobo %>% 
