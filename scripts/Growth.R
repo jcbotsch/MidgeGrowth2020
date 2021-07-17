@@ -284,7 +284,7 @@ prod1 %>%
   geom_errorbarh(aes(xmin = mean_pp-sd_pp, xmax = mean_pp+sd_pp))+
   geom_errorbar(aes(ymin = mean_sp-sd_sp, ymax = mean_sp+sd_sp), width  = NA)+
   geom_point(aes(fill = algae_conc2), shape = 21, size = 2)+
-  scale_fill_viridis(trans = "log", breaks = c(0.01, 0.1, 1))+
+  viridis::scale_fill_viridis(trans = "log", breaks = c(0.01, 0.1, 1))+
   coord_cartesian(xlim = c(0, NA),
                   ylim = c(0, NA))
   
@@ -294,7 +294,7 @@ prod1 %>%
   select(day, algae_conc2, contains("mean")) %>% 
   gather(production, val, contains("mean")) %>% 
   ggplot(aes(x = algae_conc2, y = val, fill = production))+
-  geom_errorbar(ymin = val, ymax = val+sd)+
+  # geom_errorbar(ymin = val, ymax = val+sd)+
   facet_wrap(~day)+
   geom_col(position = "dodge")+
   scale_x_continuous(trans = "log")

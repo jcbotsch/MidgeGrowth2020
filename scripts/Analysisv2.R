@@ -120,7 +120,7 @@ nep14 <- nep %>%
   filter(day == 14) %>% 
   mutate(midge = fct_relevel(midge, c("No Midges", "Midges")))
 
-g14log <- lm(gpp~log(algae_conc2)*midge+box, data = nep14) 
+g14log <- lm(log(gpp)~log(algae_conc2)*midge+box, data = nep14) 
 summary(g14log) 
 
 summary(update(g14log, .~. -log(algae_conc2):midge)) 
@@ -134,7 +134,7 @@ nep22 <- nep %>%
 
 g22log <- lm(gpp~log(algae_conc2)*midge+box, data = nep22)
 summary(g22log)
-plot(g22log)
+# plot(g22log)
 
 gpredict <- topredict %>% 
   mutate(gpp = if_else(day == "14", 
@@ -149,7 +149,7 @@ gpredict <- topredict %>%
 glog <- lmer(log(gpp)~log(algae_conc2)*day*midge+box + (1|coreid), data = nep)
 
 qqnorm(residuals(glog)); qqline(residuals(glog))
-plot(glog)
+# plot(glog)
 
 summary(glog)
 Anova(glog, test.statistic = "F", type = "3")
@@ -158,7 +158,7 @@ Anova(update(glog, .~. -log(algae_conc2):day:midge - log(algae_conc2):day - log(
 
 
 #====Figure 2: GPP====
- nep %>% 
+nep %>% 
   mutate(day = paste("Day", day)) %>% 
   ggplot(aes(x = algae_conc2, y = gpp, fill = midge))+
   facet_wrap(~day, ncol = 1)+
