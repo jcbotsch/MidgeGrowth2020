@@ -74,7 +74,7 @@ corrchlplot <- chl %>%
   geom_point(size = 2, alpha = 0.8)+
   scale_y_continuous(labels = scales::comma_format())+
   labs(x = "",
-       y = expression("Chlorophyll mg"~L^{-1})) +  #\u03BC is the unicode for mu
+       y = expression("Chlorophyll mg"~L^{-1})) +  
   theme(axis.text.x = element_blank())
 
 #uncorrected
@@ -84,7 +84,7 @@ uncorrchlplot <- chl %>%
   geom_point(size = 2, alpha = 0.8)+
   scale_y_continuous(labels = scales::comma_format())+
   labs(x = "",
-       y = "Chlorophyll mg/L") + #\u03BC is the unicode for mu
+       y = "Chlorophyll mg/L") + 
   theme(axis.text.x = element_blank())
 
 
@@ -104,7 +104,7 @@ grid.arrange(uncorrchlplot, omplot, nrow  = 2)
 nep <- ep_raw %>% 
   left_join(meta) %>% 
   mutate(coreid = as.character(coreid),
-         box = as.character(box))
+         box = box-1)
 
 nep14 <- nep %>% 
   filter(day == 14) %>% 
@@ -117,10 +117,10 @@ summary(update(g14log, .~. -log(algae_conc2):midge))
 
 
 nep22 <- nep %>% 
-  filter(day == 22) %>% 
+  filter(day == 22)  %>% 
   mutate(midge = fct_relevel(midge, c("No Midges", "Midges")))
 
-g22log <- lm(gpp~log(algae_conc2)*midge+box, data = nep22)
+g22log <- lm(log(gpp)~log(algae_conc2)*midge+box, data = nep22)
 summary(g22log)
 summary(update(g22log, .~. -log(algae_conc2):midge))
 
@@ -136,10 +136,21 @@ predicted14 <- topredict %>%
 predicted22 <- topredict %>% 
   mutate(gpp = predict(g22log, ., type = "response")) %>% 
   group_by(algae_conc2, midge) %>% 
-  summarise(gpp = mean(gpp)) %>% 
+  summarise(gpp = exp(mean(gpp))) %>% 
   mutate(day = "Day 22")
 
 gpredict <- rbind(predicted14, predicted22)
+
+gpredict %>% 
+  mutate(day = str_replace(day, " ", "_")) %>% 
+  spread(day, gpp) %>% 
+  ggplot(aes(x = Day_14, y = Day_22, col = midge))+
+  geom_line(aes(group = factor(algae_conc2)), color = "black")+
+  geom_point()+
+  geom_abline(slope = 1)+
+  lims(x = c(0,0.026),
+       y = c(0,0.026))+
+  coord_equal()
 
 
 
@@ -156,6 +167,7 @@ nepfig <- nep %>%
        y = expression("GPP "~(g~O[2]~m^{-2}~hr^{-1})),
        color = "",
        fill = "")+
+  scale_y_continuous(trans = "log", breaks = c(0.005, 0.015, 0.05))+
   scale_x_continuous(trans = "log", breaks = c(0.01, 0.1, 1))+
   theme(legend.position = c(0.5,0.95),
         legend.direction = "horizontal",
@@ -235,7 +247,7 @@ nep %>%
 cc <- cc_raw %>% 
   left_join(meta) %>% 
   mutate(coreid = as.character(coreid),
-         box = as.character(box))
+         box = box)
 
 cc14 <- cc %>% 
   filter(day == 14) %>% 
@@ -617,16 +629,17 @@ day0 <- estimated_growth %>%
   mutate(wt = weight(body_size)) %>% 
   left_join(nts) %>% 
   filter(day == 0) %>% 
-  rename(ntlag = nt, wtlag = wt) %>% 
-  select(bootstrap, algae_conc2, contains("lag"))
+  rename(body_size_day = body_size, nt_day0 = nt, wt_day0 = wt) %>% 
+  select(bootstrap, algae_conc2, contains("day0"))
 
 production_boot2 <- estimated_growth %>% 
+  filter(day!=0) %>% 
   mutate(wt = weight(body_size)) %>% 
   left_join(nts) %>% 
   left_join(day0) %>% 
   group_by(bootstrap, algae_conc2) %>% 
-  mutate(Pd = incsumprod(n1 = ntlag, n2 = nt, wt1 = wtlag, wt2 = wt, day)$Pd,
-         g = incsumprod(n1 = ntlag, n2 = nt, wt1 = wtlag, wt2 = wt, day)$g,
+  mutate(Pd = incsumprod(n1 = nt_day0, n2 = nt, wt1 = wt_day0, wt2 = wt, day)$Pd,
+         g = incsumprod(n1 = nt_day0, n2 = nt, wt1 = wt_day0, wt2 = wt, day)$g,
          gd = g/day) 
 
 
@@ -667,7 +680,8 @@ prod1 <- nep %>%
                      midge = "Midges") %>%  #0.5 g C/ g AFDM
               group_by(day, algae_conc2, midge) %>% 
               summarise(mean_sp = mean(Pdc),
-                        sd_sp = sd(Pdc))) %>% 
+                        sd_sp = sd(Pdc),
+                        Bt = mean(nt*wt))) %>% 
   filter(day!=0,
          midge == "Midges") 
 
@@ -685,9 +699,12 @@ prod2 <- nep %>%
                      midge = "Midges") %>%  #0.5 g C/ g AFDM
               group_by(day, algae_conc2, midge) %>% 
               summarise(mean_sp = mean(Pdc),
-                        sd_sp = sd(Pdc))) %>% 
+                        sd_sp = sd(Pdc),
+                        Bt = mean(nt*wt))) %>% 
   filter(day!=0,
-         midge == "Midges") 
+         midge == "Midges") %>% 
+  ungroup %>% 
+  mutate(unique_id =1:n())
 
 nep %>% 
   filter(midge == "Midges") %>% 
@@ -709,10 +726,35 @@ nep %>%
        y = expression("Secondary Production g C"~m^{-2}~d^{-1}),
        fill = "Sediment\nTreatment")
 
-prodmod <- lm(mean_sp~mean_pp:factor(day), data = prod2)
+library(phytools)
 
-summary(prodmod)
+cov.PP <- matrix(nrow  = 20, ncol = 20, 0)
 
+diag(cov.PP) <- (prod2$sd_pp)^2
+
+cov.SP <- matrix(nrow  = 20, ncol = 20, 0)
+
+diag(cov.SP) <- (prod2$sd_sp)^2
+
+cov.base <- matrix(nrow  = 20, ncol = 20, 0)
+
+#create a phylogeny with no structure
+startree <- starTree(prod2$unique_id, branch.lengths = rep(0.000000000001, 20))
+
+starTree(prod2$unique_id) %>% multi2di() %>% plot.phylo()
+
+#convert phylogeny to being rooted
+startree <- multi2di(startree)
+
+#check
+plot.phylo(startree)
+
+prodmod <- pgls.Ives(startree, X = prod2$mean_pp, y = prod2$mean_sp, Vx = cov.PP, Vy = cov.SP, Cxy = cov.base)
+
+
+
+
+prodmod$beta
 #====Figure 6: Primary and Secondary Production=====
 prodfig <- prod1 %>% 
   mutate(day = paste("Day", day)) %>% 
@@ -742,7 +784,6 @@ prodfig2 <- prod2 %>%
   geom_errorbar(aes(ymin = mean_sp-sd_sp, ymax = mean_sp+sd_sp), width  = NA)+
   geom_point(aes(fill = algae_conc2), shape = 21, size = 2)+
   viridis::scale_fill_viridis(trans = "log", breaks = c(0.01, 0.1, 1))+
-  # geom_line(aes(y = psp), data = nd %>% mutate(day = paste("Day", day)))+
   coord_cartesian(xlim = c(0, NA))+
   labs(x = expression("Primary Production g C"~m^{-2}~d^{-1}),
        y = expression("Secondary Production g C"~m^{-2}~d^{-1}),
@@ -751,14 +792,42 @@ prodfig2 <- prod2 %>%
 prod2 %>% 
   mutate(day = paste("Day", day)) %>% 
   ggplot(aes(x = mean_pp, y = mean_sp))+
+  geom_abline(slope = prodmod$beta[2], intercept = prodmod$beta[1])+
+  # geom_ribbon(aes(ymin = psp-psp_se, y = psp, ymax = psp+psp_se, group = day), fill = "gray20", alpha = 0.2, data = nd %>% mutate(day = paste("Day", day)))+
+  geom_errorbarh(aes(xmin = mean_pp-sd_pp, xmax = mean_pp+sd_pp), alpha = 0.75)+
+  geom_errorbar(aes(ymin = mean_sp-sd_sp, ymax = mean_sp+sd_sp), alpha = 0.75, width  = NA)+
+  geom_point(aes(shape = day, fill = algae_conc2), size = 2)+
+  viridis::scale_fill_viridis(trans = "log", breaks = c(0.01, 0.1, 1))+
+  # geom_line(aes(y = psp, linetype = day), data = nd %>% mutate(day = paste("Day", day)))+
+  coord_cartesian(xlim = c(0, NA))+
+  scale_shape_manual(values = c(21, 22))+
+  labs(x = expression("Primary Production g C"~m^{-2}~d^{-1}),
+       y = expression("Secondary Production g C"~m^{-2}~d^{-1}),
+       fill = "Sediment Treatment",
+       shape = element_blank(),
+       linetype = element_blank())+
+  guides(fill = guide_colorbar(title.position = "top"))+
+  theme(legend.box = "vertical",
+        legend.spacing = unit(0,units = 'points'),
+        legend.box.spacing = unit(0, units = "points"))
+
+
+# ggpreview(plot = last_plot(), dpi = 650, width = 80, height = 100, units = "mm")
+
+
+prod2 %>% 
+  mutate(day = paste("Day", day),
+         mean_pp = mean_pp*algae_conc2,
+         sd_pp = sd_pp*algae_conc2) %>% 
+  ggplot(aes(x = mean_pp, y = mean_sp))+
   geom_ribbon(aes(ymin = psp-psp_se, y = psp, ymax = psp+psp_se, group = day), fill = "gray20", alpha = 0.2, data = nd %>% mutate(day = paste("Day", day)))+
-  
   geom_errorbarh(aes(xmin = mean_pp-sd_pp, xmax = mean_pp+sd_pp), alpha = 0.75)+
   geom_errorbar(aes(ymin = mean_sp-sd_sp, ymax = mean_sp+sd_sp), alpha = 0.75, width  = NA)+
   geom_point(aes(shape = day, fill = algae_conc2), size = 2)+
   viridis::scale_fill_viridis(trans = "log", breaks = c(0.01, 0.1, 1))+
   geom_line(aes(y = psp, linetype = day), data = nd %>% mutate(day = paste("Day", day)))+
-  coord_cartesian(xlim = c(0, NA))+
+  # coord_cartesian(xlim = c(0, NA))+
+  scale_x_continuous(trans = "log1p")+
   scale_shape_manual(values = c(21, 22))+
   labs(x = expression("Primary Production g C"~m^{-2}~d^{-1}),
        y = expression("Secondary Production g C"~m^{-2}~d^{-1}),
@@ -766,11 +835,123 @@ prod2 %>%
        shape = element_blank(),
        linetype = element_blank())
 
+prod2 %>% 
+  mutate(day = paste0("Day_",day)) %>% 
+  left_join(left_join(meta, chl %>% 
+                        group_by(algae) %>% 
+                        summarise(chl = mean(chl)))) %>% 
+  mutate(pp_norm = mean_pp/chl) %>% 
+  ggplot(aes(y = mean_sp, x = pp_norm, col = algae_conc2, shape = paste("Day", day)))+
+  geom_point(size = 3)+
+  scale_x_continuous(labels = scales::comma_format())+
+  scale_color_viridis_c(trans = "log", breaks = c(0.001, 0.01, 0.1, 1))
 
-ggpreview(plot = prodfig2, dpi = 650, width = 80, height = 120, units = "mm")
+prod2 %>% 
+    mutate(day = paste0("Day_",day)) %>% 
+  left_join(left_join(meta, chl %>% 
+                        group_by(algae) %>% 
+                        summarise(init_chl = mean(chl)))) %>% 
+    ggplot(aes(y = mean_sp, x = mean_pp/init_chl, col = algae_conc2, shape = paste("Day", day)))+
+    geom_point(size = 3)+
+    scale_x_continuous(labels = scales::comma_format())+
+    scale_color_viridis_c(trans = "log", breaks = c(0.001, 0.01, 0.1, 1))
+  
+nep %>% 
+  ggplot(aes(x = midge, y = gpp/algae_conc2))+
+  facet_wrap(~day)+
+  geom_jitter(aes(color = algae_conc2), height = 0, width = 0.2)+
+  scale_color_viridis_c(trans = "log", breaks = c(0.001, 0.01, 0.1, 1))
 
 
-prod2
+nep %>% 
+  left_join(left_join(meta %>% select(algae_conc2, algae), chl %>% 
+                        group_by(algae) %>% 
+                        summarise(init_chl = mean(chl)))) %>% 
+  unique() %>% 
+  ggplot(aes(x = midge, y = gpp/init_chl))+
+  facet_wrap(~paste("Day", day))+
+  geom_jitter(aes(color = algae_conc2), height = 0, width = 0.2)+
+  scale_color_viridis_c(trans = "log", breaks = c(0.001, 0.01, 0.1, 1))
+
+nep %>% 
+  select(coreid, algae_conc2, midge, day, gpp) %>% 
+  mutate(day = paste0("gpp_day_", day)) %>% 
+  spread(day, gpp) %>% 
+  mutate(gpp_change = (gpp_day_22-gpp_day_14)/((gpp_day_22+gpp_day_14)/2)) %>% 
+  filter(!is.na(gpp_change)) %>% 
+  left_join(cc %>% select(coreid, live_tt)) %>% 
+  ggplot(aes(y = gpp_change, x = live_tt, color = algae_conc2))+
+  geom_jitter(width = 0.1, height = 0)+
+  labs(x = "live Tanytarsini found at day 22",
+       y = "Change in GPP/average GPP")+
+  scale_color_viridis_c(trans = "log", breaks = c(0.001, 0.01, 0.1, 1))
+
+nep %>% 
+  select(coreid, algae_conc2, midge, day, gpp) %>% 
+  mutate(day = paste0("gpp_day_", day)) %>% 
+  spread(day, gpp) %>% 
+  mutate(gpp_change = (gpp_day_22-gpp_day_14)/((gpp_day_22+gpp_day_14)/2)) %>% 
+  filter(!is.na(gpp_change)) %>% 
+  left_join(cc %>% select(coreid, live_tt)) %>% 
+  ggplot(aes(y = gpp_change, x = midge, color = algae_conc2))+
+  geom_jitter(width = 0.3, height = 0)+
+  labs(x = "Midge Treatment",
+       y = "Change in GPP/average GPP")+
+  scale_color_viridis_c(trans = "log", breaks = c(0.001, 0.01, 0.1, 1))
+
+
+nep %>% 
+  select(coreid, algae_conc2, midge, day, gpp) %>% 
+  mutate(day = paste0("gpp_day_", day)) %>% 
+  spread(day, gpp) %>% 
+  mutate(gpp_change = (gpp_day_22-gpp_day_14)) %>% 
+  filter(!is.na(gpp_change)) %>% 
+  left_join(cc %>% select(coreid, live_tt)) %>% 
+  ggplot(aes(y = gpp_change, x = midge, color = algae_conc2))+
+  geom_jitter(width = 0.3, height = 0)+
+  labs(x = "Midge Treatment",
+       y = "Change in GPP")+
+  scale_color_viridis_c(trans = "log", breaks = c(0.001, 0.01, 0.1, 1))
+
+#=======
+
+startbt <- {day0 %>% summarise(Btlag = mean(ntlag*wtlag))}$Btlag
+
+
+data <- prod2 %>% 
+  filter(day == 22) %>% 
+  left_join(chl %>% 
+              left_join(meta) %>% 
+              group_by(algae_conc2) %>% 
+              summarise(chl = mean(chl)/1000)) %>% 
+  mutate(Btlag = startbt)
+
+
+data2 <- prod1 %>% 
+  select(algae_conc2, mean_pp, mean_sp, Bt) %>% 
+  group_by(algae_conc2) %>% 
+  mutate(Btlag = lag(Bt),
+         pplag = lag(mean_pp)) %>% 
+  filter(day == 22)
+
+obs <- cc %>% 
+  select(algae_conc2, coreid, day, live_tt) %>% 
+  full_join(cm %>% 
+              filter(species_name == "tt") %>% 
+              group_by(coreid) %>% 
+              summarise(wt = meanna(weight(body_size)))) %>% 
+  mutate(Bt = ifelse(live_tt ==0, 0, wt*live_tt)) %>%  #biomass in mg
+  left_join(chl %>%
+              left_join(meta %>% select(algae, algae_conc2)) %>% 
+              group_by(algae_conc2) %>% 
+              summarise(chl = mean(chl))) %>% 
+  full_join(nep %>% select(midge, coreid, day, algae_conc2, gpp)) %>% 
+  mutate(coreid = as.numeric(coreid)) %>% 
+  arrange(coreid, day)
+
+# write_csv(data, "data.csv")
+# write_csv(data2, "data2.csv")
+# write_csv(obs, "microcosm_biomass.csv")
 
 #===
 growth2 <- nep %>% 
