@@ -72,15 +72,15 @@ loi <- loi_raw %>%
 
 ##NDVI 
 #these may want to be altered in the future
-NDVI1 <- read_csv("raw data/MidgeGrowth_NDVI_R_20Aug20.csv")
-NDVI2 <- read_csv("raw data/MidgeGrowth_NDVI_R_29Aug20.csv")
+NDVI1 <- read_csv("raw data/NIR_data_20Aug20.csv")
+NDVI2 <- read_csv("raw data/NIR_data_29Aug20.csv")
 
 ndvi <- NDVI1 %>% 
   mutate(day = 14) %>% 
-  select(coreid, day, NDVI_R) %>% 
+  select(coreid, everything(), -file) %>% 
   bind_rows(NDVI2 %>% 
               mutate(day = 22) %>% 
-              select(coreid, day, NDVI_R))
+              select(coreid, everything(), -file))
 
 #====Metabolism Measurements====
 nep_raw <- read_csv("raw data/DO29Oct20.csv")

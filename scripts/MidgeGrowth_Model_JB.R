@@ -91,6 +91,152 @@ trajectory <- function(simdat){ # a dataframe containing columns x.init, y.init,
 
 
 #############################################################
+#====Fig. 1 Concept====
+#parameters over which to simulate data
+simdat1 <- data.frame(y.init = 1,
+                       K = 0.9,
+                       c = 0.2,
+                       m = 0.0015,
+                       r = 0.2,
+                       Bm = 1,
+                       Tmax = 2000,
+                       Ny = 1) %>% 
+  crossing(a = seq(0,0.05, by = 0.0005),
+           x.init = 5) %>% 
+  mutate(paramset = 1:n()) 
+
+#run model
+traj1 <- trajectory(simdat1) %>% 
+  left_join(simdat1) %>% 
+  tibble()
+
+
+aopt <- traj1 %>% 
+  filter(t == Tmax) %>% 
+  filter(y == max(y)) %>% 
+  pull(a)
+
+ymax <- traj1 %>% 
+  filter(t == Tmax) %>% 
+  filter(y == max(y)) %>% 
+  pull(y)
+  
+traj1 %>% 
+  filter(t == Tmax) %>% 
+  ggplot(aes(x = a, y = y))+
+  geom_vline(xintercept = aopt, alpha = 0.5)+
+  geom_hline(yintercept = ymax, alpha = 0.5)+
+  geom_text(x = aopt+0.003, y = 1, label = expression(~alpha["opt"]))+
+  geom_text(y = ymax-2, x = 0.045, label = expression(~y["max"]))+
+  geom_line()+
+  labs(x = "Attack Rate of Consumer on Resource",
+       y = "Consumer Biomass")+
+  theme(axis.text = element_blank())
+
+# ggpreview(plot = last_plot(), width = 3, height = 3, dpi = 650, units = "in")
+
+
+#====Fig 2. Optimum across parameters====
+datax <- data.frame(y.init = 1,
+                    x.init = 2,
+           K = 0.9,
+           c = 0.2,
+           m = 0.0015,
+           # r = 0.2,
+           Bm = 1,
+           Tmax = 2000,
+           Ny = 1) %>% 
+  crossing(a = seq(0,0.025, by = 0.0001),
+           r = c(0.1, 0.2, 0.3, 0.4)) %>% 
+  mutate(paramset = 1:n()) 
+
+#run model
+traj2 <- trajectory(datax) %>% 
+  left_join(datax) %>% 
+  tibble()
+
+
+opts <- traj2 %>% 
+  group_by(r) %>% 
+  filter(t == Tmax,
+         y == max(y))
+
+traj2 %>% 
+  filter(t == Tmax) %>% 
+  ggplot(aes(x = a, y = y, color = r, group = factor(r)))+
+  # geom_vline(aes(xintercept = a, color = r), alpha = 0.5, dat = opts)+
+  # geom_hline(aes(yintercept = y, color = r), alpha = 0.5, data = opts)+
+  geom_point(data = opts)+
+  geom_line()+
+  labs(x = "Attack Rate of Consumer on Resource",
+       y = "Consumer Biomass",
+       color = "r")+
+  scale_color_gradient(low = "dodgerblue", high = "firebrick4")+
+  theme(axis.text = element_blank())
+ggpreview(plot = last_plot(), width = 3, height = 3, dpi = 650, units = "in")
+
+
+
+#=====Equilibrium====
+#find equilibrium values
+trajequil <- data.frame(y.init = 1,
+                        x.init = 5,
+                        K = 0.9,
+                        c = 0.2,
+                        m = 0.0015,
+                        # r = 0.2,
+                        Bm = 1,
+                        Tmax = 2000,
+                        Ny = 1) %>% 
+  crossing(a = seq(0,0.5, by = 0.01),
+           r = c(0.01, 0.1, 0.2, 0.45, 0.6, 0.8)) %>% 
+  mutate(paramset = 1:n()) 
+
+trajequil <- trajectory(trajequil) %>% 
+  left_join(trajequil) %>% 
+  tibble()
+
+trajequil %>%
+  gather(var, val, x, y) %>% 
+  filter(a %in% c(0.01, 0.1,0.2, 0.4)) %>% 
+  ggplot(aes(x = t, y = val, color = factor(a)))+
+  facet_wrap(var~r)+
+  geom_line()
+
+trajequil
+
+
+equils <- trajequil %>% 
+  filter(t == Tmax) %>% 
+  select(y.init, K, c, m, r, Bm, Ny, a, xequil = x, yequil = y)
+
+
+varxy <- equils %>% 
+  crossing(frac_equily = c(0.1,0.5,0.75,1)) %>% 
+  crossing(frac_equilx = c(0.1, 0.5, 0.75, 1)) %>% 
+  mutate(Tmax = 20,
+         x.init = frac_equilx*xequil,
+         y.init = frac_equily*yequil, 
+         paramset = 1:n())
+
+trajxy <- trajectory(varxy) %>% 
+  left_join(varxy) %>% 
+  tibble()
+  
+trajxy %>% 
+  filter(t == Tmax) %>% 
+  ggplot(aes(x = a, y = y, color = factor(frac_equilx)))+
+  facet_grid(frac_equily~r, scales = "free_y")+
+  geom_line()
+
+
+trajxy %>% 
+  filter(t == Tmax,
+         a!=0) %>% 
+  ggplot(aes(x = exp(r)*x^K, y = y-y.init, color = r))+
+  facet_grid(frac_equilx~frac_equily)+
+  geom_point()
+
 #====Illustrate optimum in midge feeding====
 # Calculate the midge growth as a function of their consumption rate
 
@@ -126,18 +272,7 @@ trajectory(simdat1) %>%
 
 
 
-#parameters over which to simulate data
-simdatax <- data.frame(y.init = 1,
-           K = 0.9,
-           c = 0.3,
-           m = 0.01,
-           r = 0.2,
-           Bm = 1,
-           Tmax = 200,
-           Ny = 1) %>% 
-  crossing(a = seq(0,0.4, by = 0.01),
-           x.init = seq(0.1,5, by = 0.5)) %>% 
-  mutate(paramset = 1:n()) 
+
 
 #run model
 trajax <- trajectory(simdatax) %>% 
@@ -177,10 +312,32 @@ trajax %>%
 
 
 trajax %>% 
-  filter(t %in% c(20, 50, 100, 200)) %>% 
+  filter(t %in% c(20, 100, 1000, 2000)) %>% 
+  filter(a<0.2) %>%
+  gather(var, val, x, y) %>% 
+  ggplot(aes(x = a, y = val, group = var, color = var))+
+  facet_wrap(~t, scales = "free")+
+  geom_point()+
+  geom_line()
+  # scale_color_viridis_c(option = "plasma")
+
+
+trajax %>% 
+  filter(t %in% c(20, 100, 1000, 2000)) %>% 
   filter(a<0.2) %>% 
   ggplot(aes(x = a, y = y, group = x.init, color = x.init))+
   facet_wrap(~t, scales = "free")+
+  geom_line()+
+  scale_color_viridis_c(option = "plasma")
+
+
+
+trajax %>% 
+  filter(x.init == 4.6) %>%
+  filter(a<0.2) %>% 
+  gather(var, val, x, y) %>% 
+  ggplot(aes(x = t, y = val, group = a, color = a))+
+  facet_wrap(~var, scales= "free_y")+
   geom_line()+
   scale_color_viridis_c(option = "plasma")
 
@@ -206,6 +363,216 @@ trajax %>%
 # ggpreview(plot = last_plot(), dpi = 650, width = 6, height = 3.5, units = "in")
 
 
+
+equils <- trajax %>% 
+  filter(t == Tmax) %>% 
+  select(y.init, K, c, m, r, Bm, Ny, a, xequil = x, yequil = y)
+
+
+simdatax <- data.frame(K = 0.9,
+                       c = 0.3,
+                       m = 0.01,
+                       r = 0.2,
+                       Bm = 0,
+                       Tmax = 20,
+                       Ny = 1) %>% 
+  crossing(a = seq(0,0.4, by = 0.01),
+           frac_equily = c(0.1,0.5,0.75, 1, 10)) %>% 
+  left_join(equils) %>%
+  crossing(frac_equilx = c(0.1, 0.5, 0.75, 1, 10)) %>% 
+  mutate(x.init = frac_equilx*xequil,
+         y.init = frac_equily*yequil) %>% 
+  mutate(paramset = 1:n()) 
+
+#run model
+trajax <- trajectory(simdatax) %>% 
+  left_join(simdatax) %>% 
+  tibble()
+
+
+
+trajax %>% 
+  left_join(equils) %>% 
+  filter(t == 20) %>% 
+  gather(var, val, x, y) %>% 
+  ggplot(aes(x = a, y = val, color = factor(frac_equilx), group = factor(frac_equilx)))+
+  facet_grid(var~frac_equily, scales = "free")+
+  geom_line()
+
+trajax %>% 
+  left_join(equils) %>% 
+  filter(t == 20) %>% 
+  ggplot(aes(x = r*x, y = y-y.init, color = a))+
+  facet_grid(paste("x =", frac_equilx)~paste( "y = ", frac_equily), scales = "free_y")+
+  geom_point()
+
+
+trajax %>% 
+  left_join(equils) %>% 
+  filter(t == 20) %>% 
+  ggplot(aes(x = exp(r)*x^K, y = y-y.init))+
+  # facet_wrap(~a, scales = "free")+
+  # facet_grid(paste("x =", frac_equilx)~paste( "y = ", frac_equily), scales = "free_y")+
+  geom_line(aes(color = a, group = interaction(a, frac_equilx)), alpha = 0.5)+
+  geom_point(aes(fill = frac_equily), shape = 21, alpha = 0.5)+
+  geom_smooth(method = "lm")+
+  scale_color_viridis_c(option = "plasma")+
+  scale_fill_viridis_c()
+
+trajax %>% 
+  left_join(equils) %>% 
+  filter(t == 20,
+         frac_equilx|frac_equily == 1) %>% 
+  ggplot(aes(x = exp(r)*x^K, y = y-y.init))+
+  # facet_wrap(~a, scales = "free")+
+  # facet_grid(paste("x =", frac_equilx)~paste( "y = ", frac_equily), scales = "free_y")+
+  geom_line(aes(color = a, group = interaction(a, frac_equilx)), alpha = 0.5)+
+  geom_point(aes(fill = frac_equily), shape = 21, alpha = 0.5)+
+  geom_smooth(method = "lm")+
+  scale_color_viridis_c(option = "plasma")+
+  scale_fill_viridis_c()
+
+unique(trajax$y.init)
+
+trajax %>% 
+  filter(round(y.init,1)==0.5) %>% 
+  count(a, c, )
+
+trajax %>% 
+  left_join(equils) %>% 
+  filter(t == 20) %>% 
+  ggplot(aes(x = exp(r)*x^K, y = y-y.init, group = interaction(a, frac_equilx)))+
+  # facet_wrap(~a, scales = "free")+
+  # facet_grid(paste("x =", frac_equilx)~paste( "y = ", frac_equily), scales = "free_y")+
+  geom_line(aes(color = a), alpha = 0.5)+
+  facet_wrap(~frac_equilx)+
+  geom_point(aes(fill = frac_equily), shape = 21, alpha = 0.5)+
+  scale_color_viridis_c(option = "plasma")+
+  scale_fill_viridis_c()
+
+
+
+
+trajax %>% 
+  left_join(equils) %>% 
+  filter(t == 20) %>% 
+  ggplot(aes(x = exp(r)*x^K, y = y-y.init, group = interaction(a, frac_equily)))+
+  # facet_wrap(~a, scales = "free")+
+  # facet_grid(paste("x =", frac_equilx)~paste( "y = ", frac_equily), scales = "free_y")+
+  geom_line(aes(color = a), alpha = 0.5)+
+  geom_point(aes(fill = frac_equilx), shape = 21, alpha = 0.5)+
+  scale_color_viridis_c(option = "plasma")+
+  scale_fill_viridis_c()
+
+trajax %>% 
+  left_join(equils) %>% 
+  filter(t == 20) %>% 
+  ggplot(aes(x = exp(r)*x^K, y = y-y.init, group = interaction(a, frac_equily)))+
+  # facet_wrap(~a, scales = "free")+
+  # facet_grid(paste("x =", frac_equilx)~paste( "y = ", frac_equily), scales = "free_y")+
+  facet_wrap(~frac_equily)+
+  geom_line(aes(color = a), alpha = 0.5)+
+  geom_point(aes(fill = frac_equilx), shape = 21, alpha = 0.5)+
+  scale_color_viridis_c(option = "plasma")+
+  scale_fill_viridis_c()
+
+  
+
+trajax %>% 
+  filter(a %in% c(0.01, 0.1, 0.2, 0.4)) %>% 
+  left_join(equils) %>% 
+  # gather(var, val, x, y) %>% 
+  ggplot(aes(x = t, y = y, color = a, group = factor(a)))+
+  facet_wrap(frac_equilx~frac_equily, scales = "free_y")+
+  geom_line()
+
+
+######
+
+#find equilibrium values
+trajequil <- data.frame(y.init = 1,
+           x.init = 5,
+           K = 0.9,
+           c = 0.2,
+           m = 0.002,
+           Bm = 1,
+           Tmax = 2000,
+           Ny = 1) %>% 
+  crossing(a = seq(0,0.5, by = 0.01),
+           r = c(0.01, 0.1, 0.2, 0.45, 0.6, 0.8)) %>% 
+  mutate(paramset = 1:n()) 
+
+trajequil <- trajectory(trajequil) %>% 
+  left_join(trajequil) %>% 
+  tibble()
+
+trajequil %>%
+  gather(var, val, x, y) %>% 
+  filter(a %in% c(0.01, 0.1,0.2, 0.4)) %>% 
+  ggplot(aes(x = t, y = val, color = factor(a)))+
+  facet_wrap(var~r)+
+  geom_line()
+
+########3333
+
+trajsim <- data.frame(y.init = 1,
+           K = 0.9,
+           c = 0.2,
+           m = 0.002,
+           Bm = 1,
+           Tmax = 20,
+           Ny = 1) %>% 
+  crossing(a = seq(0,0.5, by = 0.01),
+           x.init = c(0.01, 0.1, 1, 5),
+           r = c(0.01, 0.1, 0.2, 0.45, 0.6, 0.8)) %>% 
+  mutate(paramset = 1:n()) 
+
+trajsim <- trajectory(trajsim) %>% 
+  left_join(trajsim) %>% 
+  tibble()
+
+
+
+trajsim %>% 
+  filter(t == Tmax,
+         y.init == 1) %>% 
+  rename(Resource = x, Consumer = y) %>% 
+  gather(var, val, Resource, Consumer) %>% 
+  ggplot(aes(x = a, y = val, group = x.init, color = x.init))+
+  facet_wrap(var~paste("r =", r), scales = "free_y", nrow = 2)+
+  geom_line()+
+  labs(x = "Attack Rate of Consumer on Resource",
+       y = "Biomass",
+       color = "Initial Resource Biomass")+
+  geom_vline(xintercept = 0.045)+
+  scale_color_viridis_c(option = "plasma")
+
+
+trajsim %>% 
+  filter(r %in% c(0.01, 0.1, 0.45, 0.8),
+         a %in% seq(0, 0.5, by = 0.1)) %>% 
+  mutate(r = paste("r = ", r), 
+         a = paste("a = ", a)) %>% 
+  rename(Resource = x, Consumer = y) %>% 
+  gather(var, val, Resource, Consumer) %>% 
+  group_by(a, r, x.init, var) %>%
+  # mutate(val = val/mean(val)) %>%
+  ggplot(aes(x = t, y = val, group = interaction(var, x.init), color = x.init))+
+  facet_wrap(r~a, scales = "free_y", ncol = 5)+
+  geom_line(aes(linetype = var))+
+  labs(y = "Biomass",
+       linetype = element_blank(),
+       color = "Initial Resource Biomass")+
+  scale_color_viridis_c(option= "plasma")
+
+trajsim %>% 
+  mutate(r = paste("r = ", r), 
+         a = paste("a = ", a)) %>% 
+  ggplot(aes(x = t, y = y, group = x.init, color = x.init))+
+  facet_wrap(r~a, scales = "free_y", ncol = 7)+
+  geom_line()+
+  scale_color_viridis_c(option= "plasma", trans = "log")
+
 #############################################################
 #====Read Data===
 meta <- read_csv("clean data/MG_meta.csv") %>% 
@@ -214,6 +581,7 @@ chl_raw <- read_csv("clean data/MG_chl.csv")
 ep_raw <- read_csv("clean data/MG_ep.csv")
 cm_raw <- read_csv("clean data/MG_cm.csv")
 cc_raw <- read_csv("clean data/MG_cc.csv")
+ndvi_raw <- read_csv("clean data/MG_ndvi.csv")
 
 #====Prepare Data====
 chl <- chl_raw %>% 
@@ -338,7 +706,7 @@ SSfit <- function(par, data, x.init, y.init, SS.weight, par.fixed=par.fixed, tof
 # start values
 r <- .5
 K <- .9
-a <- .5
+a <- .2
 ac <- .03
 m <- .001
 gpp.rate <- 10^0
@@ -392,11 +760,11 @@ round(c(r=r, K=K, a=a, c=c, m=m, gpp.rate=gpp.rate, SS=opt.opt$value), digits=5)
 #====plot model=====
 
 sim <- data.frame(x.init = unique(data$x0),
-                  r = r,
-                  K = K,
-                  a = a,
-                  c = c, 
-                  m = m,
+                  r = exp(par[1]),
+                  K = exp(par[2]),
+                  a = exp(par[3]),
+                  c = exp(par[4])/exp(par[3]), 
+                  m = exp(par[5]),
                   Bm = 0,
                   Ny = 1,
                   Tmax = 22) %>% 
@@ -410,6 +778,7 @@ obsmod <- trajectory(sim) %>%
               unique() %>% 
               rename(x.init = x0, y.init=y0) %>% 
               mutate(midge = ifelse(y.init>0, "Midges", "No Midges")))
+
 
 
 obsmod %>% 
@@ -463,6 +832,113 @@ obsmod %>%
 # ggpreview(plot = last_plot(), dpi = 650, width = 3, height = 4, units = "in")
 
 
+
+
+sima <- data.frame( a = c(seq(0, 0.4, by = 0.001), a),
+                  K = K,
+                  r = r,
+                  c = c, 
+                  m = m,
+                  Bm = 0,
+                  Ny = 1,
+                  Tmax = 22) %>% 
+  crossing(x.init = unique(data$x0)) %>% 
+  crossing(y.init = unique(data$y0)) %>% 
+  mutate(paramset = 1:n())
+
+obsmoda <- trajectory(sima) %>% 
+  left_join(sima) %>% 
+  left_join(init.data %>% 
+              select(-coreid) %>% 
+              unique() %>% 
+              rename(x.init = x0, y.init=y0) %>% 
+              mutate(midge = ifelse(y.init>0, "Midges", "No Midges")))
+
+
+aest <- a
+obsmoda %>% 
+  filter(t == Tmax,
+         y.init>0) %>% 
+  gather(var, val, x, y) %>% 
+  ggplot(aes(x = a, y = val, color = x.init, group = x.init))+
+  geom_vline(xintercept = aest)+
+  facet_wrap(~var, scales = 'free')+
+  geom_line()+
+  scale_color_gradient(trans = "log2", low = "goldenrod", high = "darkgreen")
+
+
+
+#
+sim_tsa <- data.frame(x.init = unique(data$x0), 
+                      y.init = max(unique(data$y0)),
+                      r = exp(par[1]),
+                      K = exp(par[2]),
+                      # a = exp(par[3]),
+                      c = exp(par[4])/exp(par[3]), 
+                      m = exp(par[5]),
+                      Bm = 0,
+                      Ny = 1,
+                      Tmax = 5000) %>% 
+  crossing(a = seq(0, 0.3, by = 0.01)) %>% 
+  mutate(paramset = 1:n())
+  
+
+sim_tsa <- trajectory(sim_tsa) %>% 
+  left_join(sim_tsa) %>% 
+  tibble()
+
+sim_tsa %>% 
+  filter(t %in% c(22, 65, 5000),
+       y.init>0) %>% 
+  rename(Midges = y, Algae = x) %>%
+  mutate(t2 = ifelse(t == 5000, "Equilibrium", paste("t =", t)),
+         t3 = fct_reorder(t2, t, .desc = FALSE) ) %>% 
+  ggplot(aes(x = a, y = Midges-y.init, group = x.init))+
+  geom_vline(xintercept = aest)+
+  facet_wrap(~t3, scales = 'free_y', ncol = 1)+
+  scale_x_continuous(breaks = c(0, 0.15, 0.3))+
+  geom_line(alpha = 0.5)+
+  geom_point(aes(fill = x.init), alpha = 0.7, shape = 21)+
+  labs(x = "Attack Rate",
+       y = "Secondary Production", 
+       fill = "Initial Resource Biomass")+
+  scale_fill_viridis_c()+
+  guides(fill = guide_colorbar(title.position = "top"))
+ggpreview(plot = last_plot(), width = 3, height = 4, units = "in", dpi = 650)
+
+
+sim_tsa %>% 
+  filter(t %in% c(22),
+         y.init>0) %>% 
+  rename(Midges = y, Algae = x) %>%
+  mutate(t2 = ifelse(t == 5000, "Equilibrium", paste("t =", t)),
+         t3 = fct_reorder(t2, t, .desc = FALSE) ) %>% 
+  ggplot(aes(x = a, y = Midges-y.init, group = x.init))+
+  geom_vline(xintercept = aest)+
+  scale_x_continuous(breaks = c(0, 0.15, 0.3))+
+  geom_line(alpha = 0.5)+
+  geom_point(aes(fill = x.init), alpha = 0.7, shape = 21)+
+  labs(x = "Attack Rate",
+       y = "Secondary Production", 
+       fill = "Initial Resource Biomass")+
+  scale_color_gradient(low = "goldenrod", high = "darkgreen")+
+  scale_fill_viridis_c()+
+  guides(fill = guide_colorbar(title.position = "top"))
+
+# ggpreview(plot = last_plot(), width = 3, height = 4, units = "in", dpi = 650)
+
+round(aest, 2)
+
+sim_tsa %>% 
+  filter(t<100) %>% 
+  group_by(t) %>% 
+  filter(y == max(y)) %>% 
+  filter(a == 0.04) %>% 
+  ungroup %>% 
+  filter(y == max(y))
+
+
+
 #longer timescale
 sim_ts <- data.frame(x.init = unique(data$x0),
                      r = r,
@@ -472,7 +948,7 @@ sim_ts <- data.frame(x.init = unique(data$x0),
                      m = m,
                      Bm = 0,
                      Ny = 1,
-                     Tmax = 1000) %>% 
+                     Tmax = 10000) %>% 
   crossing(y.init = unique(data$y0)) %>% 
   mutate(paramset = 1:n())
 
@@ -488,8 +964,7 @@ sim_ts <- trajectory(sim_ts) %>%
 
 sim_ts %>% 
   gather(var, val, x, y) %>% 
-  filter(!(var=="y"& midge == "No Midges"),
-         t<250) %>% 
+  filter(!(var=="y"& midge == "No Midges")) %>% 
   ggplot(aes(x = t, y = val, group = algae_conc2, col = algae_conc2))+
   facet_wrap(var~midge, scales = "free_y", ncol=2)+
   geom_line()+
@@ -502,6 +977,17 @@ sim_ts %>%
        y = "Scaled Biomass")
 # ggpreview(plot = last_plot(), dpi = 650, width = 3, height = 4, units = "in")
 
+sim_ts %>% 
+  filter(t == Tmax) %>% 
+  rename(y.equil = y,
+         x.equil = x) %>% 
+  mutate(y.frac = y.init/y.equil,
+         x.frac = x.init/x.equil) %>% 
+  ungroup %>% 
+  select(algae_conc2, contains("x."), contains("y.")) %>% 
+  mutate_all(round, 3)
+
+obsmod
 
 #===Add Midges====
 
@@ -938,159 +1424,6 @@ dyn_icr %>%
   facet_grid(paste0("r = ",round(r,3))~paste0("x.init = ", round(x.init,3)))+
   geom_line()+
   geom_vline(xintercept = 750)
-# #=====fit with biomass specific loss rates====
-# 
-# 
-# 
-# SSfit2 <- function(par, data, x.init, y.init, SS.weight, par.fixed=par.fixed, tofit = T){
-#   
-#   par.temp <- par.fixed
-#   par.temp[is.na(par.fixed)] <- par
-#   par <- par.temp
-#   
-#   r <- exp(par[1])
-#   K <-  exp(par[2])
-#   a <-  exp(par[3])
-#   ac <-  exp(par[4])
-#   Bm <-  exp(par[5])
-#   gpp.rate <-  exp(par[6])
-#   
-#   x <- x.init
-#   y <- y.init
-#   
-#   Tmax <- 22
-#   
-#   SS1 <- 0
-#   SS2 <- 0
-#   for(t in 1:Tmax){
-#     
-#     x.next <- exp(r)*x^K - a*x*y
-#     y <- y + ac*x*y - Bm*y
-#     x <- x.next
-#     
-#     if(t == 14){
-#       dif.x <- log(gpp.rate*x) - log(data$x[data$day == 14])
-#       SS1 <- SS1 + sum(dif.x^2)
-#       
-#       sampled.data <- (data$day == 14) & !is.na(data$y) & (data$midge == "Midges")
-#       sampled.sim <- data$coreid[sampled.data]
-#       dif.y <- log(y[sampled.sim]) - log(data$y[sampled.data])
-#       #dif.y <- y[sampled.sim] - data$wt[sampled.data]
-#       SS2 <- SS2 + sum(dif.y^2)
-#     }
-#     
-#     if(t == 22){
-#       sampled.data <- data$day == 22
-#       sampled.sim <- data$coreid[sampled.data]
-#       dif.x <- log(gpp.rate*x[sampled.sim]) - log(data$x[sampled.data])
-#       SS1 <- SS1 + sum(dif.x^2)
-#       
-#       sampled.data <- (data$day == 22) & (data$midge == "Midges") & !is.na(data$y)
-#       sampled.sim <- data$coreid[sampled.data]
-#       dif.y <- log(y[sampled.sim]) - log(data$y[sampled.data])
-#       #dif.y <- y[sampled.sim] - data$wt[sampled.data]
-#       SS2 <- SS2 + sum(dif.y^2)
-#     }
-#   }
-#   if(tofit){
-#     if(any(is.nan(x))) {
-#       return(10^8)
-#     }else{
-#       return(SS1 + SS.weight*SS2)
-#     }
-#   }else{
-#     return(c(SS1,SS.weight*SS2, exp(par), mean(x), mean(y)))
-#   }
-# }
-# 
-# # start values
-# r <- .5
-# K <- .9
-# a <- .5
-# ac <- .03
-# m <- .001
-# gpp.rate <- 10^0
-# 
-# #get initial data
-# init.data <- data %>% 
-#   select(coreid, algae_conc2, x0, y0) %>% 
-#   unique()
-# 
-# x.init <- init.data$x0
-# y.init <- init.data$y0
-# 
-# SS.weight <- 30
-# 
-# par.full2 <- log(c(r, K, a, ac, m, gpp.rate))
-# par.fixed2 <- c(NA, NA, NA, NA, NA, NA)
-# par2 <- par.full2[is.na(par.fixed)]
-# 
-
-# #====Fit2====
-# SSmin <- 10^10
-# nrep <- 10
-# for (i.rep in 1:nrep){
-#   opt <- optim(par = par, fn=SSfit2, data=data, x.init = x.init, y.init = y.init, SS.weight = SS.weight, par.fixed=par.fixed, method = "SANN")
-#   opt <- optim(par = opt$par, fn=SSfit2, data=data, x.init = x.init, y.init = y.init, SS.weight = SS.weight, par.fixed=par.fixed, method = "Nelder-Mead")
-#   if(opt$value < SSmin){
-#     SSmin <- opt$value
-#     opt.opt <- opt
-#   }
-#   par2 <- exp(rnorm(n=length(par), sd=1)) * opt.opt$par
-#   show(c(opt$value, SSfit(par=opt$par, data=data, x.init = x.init, y.init=y.init, SS.weight = SS.weight, par.fixed=par.fixed, tofit=F)))
-# }
-# par.temp2 <- par.fixed2
-# par.temp2[is.na(par.fixed)] <- opt.opt$par
-# par2 <- par.temp2
-# 
-# r2 <- exp(par2[1])
-# K2 <- exp(par2[2])
-# a2 <- exp(par2[3])
-# ac2 <- exp(par2[4])
-# c2 <- ac2/a2
-# Bm <- exp(par2[5])
-# gpp.rate <- exp(par2[6])
-# round(c(r=r2, K=K2, a=a2, c=c2, m=Bm, gpp.rate=gpp.rate, SS=opt.opt$value), digits=8)
-# # r        K        a        c        m gpp.rate       SS 
-# # 0.187    0.927    0.045    0.163    0.002    0.183   66.817 
-# 
-# 
-# #values are quite similar
-# 
-# 
-# dyn_ic2 <- data.frame(r = r2,
-#                      Ny = 1,
-#                      K = K2,
-#                      a = a2,
-#                      c = c2, 
-#                      m = Bm,
-#                      Bm = 1,
-#                      Tmax = 2000) %>% 
-#   crossing(x.init = c(min(init.data$x0), max(init.data$x0)),
-#            y.init = c(egg, max(init.data$y0), adult/2)) %>% 
-#   mutate(paramset = 1:n())
-# 
-# dyn_ic2 <- traj_gen(dyn_ic2) %>% 
-#   left_join(dyn_ic2)
-# 
-# 
-# dyn_ic2 %>% 
-#   mutate(x = x*gpp.rate) %>% 
-#   gather(var, val, x, y) %>% 
-#   ggplot(aes(x = t, y = val, col = var))+
-#   geom_hline(yintercept = adult)+
-#   facet_grid(round(y.init,3)~round(x.init, 3))+
-#   geom_line()
-# 
-# 
-# dyn_ic %>% 
-#   group_by(gen, x.init, y.init) %>% 
-#   filter(gent == max(gent)) %>% 
-#   group_by(x.init, y.init) %>% 
-#   filter(gen !=max(gen)) %>% 
-#   count(gent)
-# 
-# 
 
 ######
 

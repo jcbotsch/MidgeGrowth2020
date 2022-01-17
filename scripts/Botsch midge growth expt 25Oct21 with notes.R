@@ -1,3 +1,5 @@
+
+
 trajectory <- function(z.init, # a matrix where the first column describes initial algal biomass and the second describes initial midge biomass
                        r, # the per capita growth rate of algae
                        K, #the density dependent term in gomptertz model
@@ -47,7 +49,7 @@ growth <- function(z.init, r, K, a, c, m, Tmax){
 		X[i,] <- c(x,y)
 	}	
 	
-	return(cbind(x.growth=exp(r*(1 - X[,1]/K))*X[,1], ### should be exp(r)*(1-x/K)  # the per capita growth rate of algae
+	return(cbind(x.growth=exp(r)*X[,1]^K, ### should be exp(r)*(1-x/K)  # the per capita growth rate of algae
 	             delta.y=X[,2] - z.init[,2])) 
 }
 
@@ -317,7 +319,7 @@ for(y.sim in y.init.range) for(a.sim in a.range){
 }
 
 par(mfrow=c(1,1), mai=c(.8,.8,.1,.1))
-plot(delta.y ~ a, data=df[df$y.init==y.init.range[1],], typ="l", ylim=c(0, max(delta.y)))
+plot(df$delta.y ~ a, data=df[df$y.init==y.init.range[1],], typ="l", ylim=c(0, max(df$delta.y)))
 lines(delta.y ~ a, data=df[df$y.init==y.init.range[2],], col="red")
 lines(delta.y ~ a, data=df[df$y.init==y.init.range[3],], col="blue")
 lines(c(a,a),c(0,10), col="orange")

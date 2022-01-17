@@ -537,6 +537,99 @@ cm %>%
 # ggpreview(plot = last_plot(), dpi = 650, width = 80, height = 80, units = "mm")
 
 
+#=====NDVI======
+ndvi <- ndvi %>% 
+  left_join(meta) %>% 
+  mutate(box = as.character(box))
+
+ndvi14 <- ndvi %>% filter(day == 14)
+ndvi22 <- ndvi %>% filter(day == 22)
+
+#How do midges affect mean surface ENDVI?
+e14 <- lm(ENDVI~log2(algae_conc2)*midge+box, data = ndvi14)
+summary(e14)
+summary(update(e14, .~.-log2(algae_conc2):midge))
+
+e22 <- lm(ENDVI~log2(algae_conc2)*midge+box, data = ndvi22)
+summary(e22)
+summary(update(e22, .~.-log2(algae_conc2):midge))
+
+#how do midges and initial concentration affect standardized variation in ENDVI
+ec14 <- lm(ENDVI_cv~log2(algae_conc2)*midge+box, data = ndvi14)
+summary(ec14)
+summary(update(ec14, .~.-log2(algae_conc2):midge))
+
+ec22 <- lm(ENDVI_cv~log2(algae_conc2)*midge+box, data = ndvi22)
+summary(ec22)
+summary(update(ec22, .~.-log2(algae_conc2):midge))
+
+#how do midges and initial concentration affect the degree of spatial autocorrelation in ENDVI (at the 1mm scale)
+em14 <- lm(ENDVI_1mmI~log2(algae_conc2)*midge+box, data = ndvi14)
+summary(em14)
+summary(update(em14, .~.-log2(algae_conc2):midge))
+
+em22 <- lm(ENDVI_cv~log2(algae_conc2)*midge+box, data = ndvi22)
+summary(em22)
+summary(update(em22, .~.-log2(algae_conc2):midge))
+
+
+#association between NDVI and GPP
+ndvi %>% 
+  left_join(nep %>% 
+              select(coreid, gpp, nep, resp) %>% 
+              mutate(coreid = as.numeric(coreid))) %>% 
+  lm(gpp~ENDVI*day, data = .) %>% 
+  summary()
+#the days appear to differ in their relationship with ENDVI and gpp. ENDVi values are often lower on day 14
+
+ndvi %>% 
+  left_join(nep %>% 
+              select(coreid, gpp, nep, resp) %>% 
+              mutate(coreid = as.numeric(coreid))) %>%
+  ggplot(aes(x =  ENDVI, y = gpp, color = factor(day)))+
+  geom_point()+
+  geom_smooth(method = "lm")
+
+
+ndvi %>% 
+  left_join(nep %>% 
+              select(coreid, gpp, nep, resp) %>% 
+              mutate(coreid = as.numeric(coreid))) %>%
+  ggplot(aes(x =  ENDVI_cv, y = gpp, color = factor(day)))+
+  geom_point()+
+  geom_smooth(method = "lm")
+
+#how is ENDVI and spatial variability associated with midges
+ndvi %>% 
+  left_join(cc %>% 
+              mutate(coreid = as.numeric(coreid)) %>% 
+              select(coreid, live_tt)) %>% 
+  ggplot(aes(x = live_tt, y = ENDVI, fill = algae_conc2))+
+  facet_wrap(~day, scales = "free")+
+  geom_point(shape = 21)+
+  scale_fill_viridis_c(trans = "log2", breaks  = c(0.01, 0.1, 1))
+
+
+
+ndvi %>% 
+  left_join(cc %>% 
+              mutate(coreid = as.numeric(coreid)) %>% 
+              select(coreid, live_tt)) %>% 
+  ggplot(aes(x = live_tt, y = ENDVI_cv, fill = algae_conc2))+
+  facet_wrap(~day, scales = "free")+
+  geom_point(aes(fill = algae_conc2), shape = 21, size =2)+
+  scale_fill_viridis_c(trans = "log2", breaks  = c(0.01, 0.1, 1))
+
+ndvi %>% 
+  left_join(cc %>% 
+              mutate(coreid = as.numeric(coreid)) %>% 
+              select(coreid, live_tt)) %>% 
+  ggplot(aes(x = live_tt, y = ENDVI_1mmI, fill = algae_conc2))+
+  facet_wrap(~day, scales = "free")+
+  geom_point(shape = 21)+
+  scale_fill_viridis_c(trans = "log2", breaks  = c(0.01, 0.1, 1))
+
+
 
 #=====Primary and Secondary Production=====
 
@@ -755,6 +848,20 @@ prodmod <- pgls.Ives(startree, X = prod2$mean_pp, y = prod2$mean_sp, Vx = cov.PP
 
 
 prodmod$beta
+
+
+mamod <- lmodel2::lmodel2(mean_sp~mean_pp, data = prod2)
+
+
+mamod$regression.results
+
+mamod2 <- lmodel2::lmodel2(mean_sp~mean_pp, range.x = "interval", range.y = "interval", nperm = 1000, data = prod2)
+
+mamod2
+
+
+plot(mamod2, method = "SMA")
+
 #====Figure 6: Primary and Secondary Production=====
 prodfig <- prod1 %>% 
   mutate(day = paste("Day", day)) %>% 
