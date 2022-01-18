@@ -317,7 +317,50 @@ simbm %>%
   scale_fill_viridis_c()+
   guides(fill = guide_colorbar(title.position = "top"))
 
-ggpreview(plot = last_plot(), width = 3, height = 4, units = "in", dpi = 650)
+# ggpreview(plot = last_plot(), width = 3, height = 4, units = "in", dpi = 650)
 
 
 
+simbm %>% 
+  filter(t %in% c(22),
+         y.init>0, 
+         a %in% c(0.02, 0.05, 0.08, 0.15)) %>%
+  mutate(t2 = ifelse(t == 5000, "Equilibrium", paste("t =", t)),
+         t3 = fct_reorder(t2, t, .desc = FALSE)) %>% 
+  ggplot(aes(x = exp(r)*x^K, y = y-y.init, fill = x.init))+
+  # geom_vline(xintercept = a2)+
+  facet_wrap(~paste("\u03b1 =", a), scales = "free", ncol = 2)+
+  scale_x_continuous(breaks = scales::pretty_breaks(n = 3))+
+  scale_y_continuous(breaks = scales::pretty_breaks(n = 3))+
+  
+  geom_path()+
+  geom_point(shape = 21, alpha = 0.7)+
+  labs(x = "Primary Production",
+       y = "Secondary Production", 
+       fill = "Initial Resource Biomass")+
+  scale_fill_viridis_c()+
+  guides(fill = guide_colorbar(title.position = "top"))
+
+# ggpreview(plot = last_plot(), width = 3, height = 4, units = "in", dpi = 650)
+
+
+
+simbm %>% 
+  filter(t %in% c(65),
+         y.init>0, 
+         a %in% c(0.01, 0.05, 0.08, 0.15)) %>%
+  mutate(t2 = ifelse(t == 5000, "Equilibrium", paste("t =", t)),
+         t3 = fct_reorder(t2, t, .desc = FALSE)) %>% 
+  ggplot(aes(x = exp(r)*x^K, y = y-y.init, fill = x.init))+
+  # geom_vline(xintercept = a2)+
+  facet_wrap(~paste("\u03b1 =", a), scales = "free", ncol = 2)+
+  scale_x_continuous(breaks = scales::pretty_breaks(n = 3))+
+  geom_path()+
+  geom_point(shape = 21, alpha = 0.7)+
+  labs(x = "Primary Production",
+       y = "Secondary Production", 
+       fill = "Initial Resource Biomass")+
+  scale_fill_viridis_c()+
+  guides(fill = guide_colorbar(title.position = "top"))
+
+# ggpreview(plot = last_plot(), width = 3, height = 4, units = "in", dpi = 650)
