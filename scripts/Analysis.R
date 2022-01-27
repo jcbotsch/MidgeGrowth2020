@@ -587,8 +587,9 @@ ndvi %>%
               select(coreid, gpp, nep, resp) %>% 
               mutate(coreid = as.numeric(coreid))) %>%
   ggplot(aes(x =  ENDVI, y = gpp, color = factor(day)))+
-  geom_point()+
-  geom_smooth(method = "lm")
+  geom_point(aes(fill = algae_conc2), size = 2, shape = 21)+
+  geom_smooth(method = "lm")+
+  scale_fill_viridis_c(trans = "log", breaks = c(0.01, 0.1, 1))
 
 
 ndvi %>% 

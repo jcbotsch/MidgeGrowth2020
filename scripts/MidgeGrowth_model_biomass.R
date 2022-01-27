@@ -34,29 +34,7 @@ ggpreview <- function(...) {
 }
 
 #====Model=====
-#model the dynamics through time
-# trajectory.Ives <- function(z.init, r, K, a, c, m, Tmax){
-#   
-#   for(i in 1:nrow(z.init)){
-#     x <- z.init[i,1]
-#     y <- z.init[i,2]
-#     
-#     X <- matrix(NA, 2, Tmax)
-#     for(t in 1:Tmax){
-#       #x.next <- exp(r*(1 - x/K))*x - a*x*y
-#       x.next <- exp(r)*x^K - a*x*y
-#       y <- y + c*a*x*y - m
-#       x <- x.next
-#       y <- max(y,0)
-#       
-#       X[,t] <- matrix(c(x,y),2,1)
-#     }	
-#     if(i == 1) maxX <- max(X)
-#     plot(X[1,], typ="l", ylim=c(0,maxX))
-#     lines(X[2,], col="red")
-#   }
-# }
-# 
+theta <- 3/4 #allometric scaling factor (currently using 3/4 on the basis of the WBE model, Riveros and Enquist 2011, )
 
 trajectory <- function(simdat){ # a dataframe containing columns x.init, y.init,a, K, c, m, Bm, Tmax 
   #list
@@ -70,17 +48,15 @@ trajectory <- function(simdat){ # a dataframe containing columns x.init, y.init,
     K <- simdat$K[i]
     c <- simdat$c[i]
     m <- simdat$m[i]
-    Bm <- simdat$Bm[i] #lgl (0 or 1)
     Tmax <- simdat$Tmax[i]
-    Ny <- simdat$Ny[i]
-    
+
     out <- data.frame(paramset = i, t = 1:Tmax,x = NA, y = NA)
     out$x[1] = x
     out$y[1] = y
     for(t in 2:Tmax){
       
-      out$x[t] <- max(0,exp(r)*out$x[t-1]^K - Ny*(a*out$x[t-1]*out$y[t-1])) #growth of algae ##CHECK 
-      out$y[t] <- max(0, out$y[t-1] + c*a*out$x[t-1]*out$y[t-1] - (1-Bm)*m - Bm*m*out$y[t-1] ) #midge growth
+      out$x[t] <- max(0,exp(r)*out$x[t-1]^K - a*out$x[t-1]*out$y[t-1]) #growth of algae ##CHECK 
+      out$y[t] <- max(0, out$y[t-1] + c*a*out$x[t-1]*out$y[t-1]- m*out$y[t-1]) #midge growth
       
     }	
     
@@ -125,21 +101,13 @@ data <- gpp %>%
 init.midges <- midge %>% 
   filter(day == 0)
 y.init.mean <- {init.midges %>% 
-    summarise(y = sum(live_tt*wt)/sum(live_tt))}$y
+    summarise(y = mean(Bt))}$y
 
 # prune to experimental falcon tubes
 data <- data %>% 
   filter(day>0) %>% 
   arrange(day, coreid)
 
-
-# standardize variables
-data <- data %>% 
-  mutate(x = gpp/mean(gpp, na.rm = TRUE),
-         x0 = chl/mean(chl, na.rm = TRUE),
-         y = wt/mean(wt, na.rm = TRUE),
-         y0 = ifelse(midge == "Midges", y.init.mean/mean(wt, na.rm = TRUE), 0)) %>% 
-  arrange(coreid)
 
 
 
@@ -150,48 +118,56 @@ data <- data %>%
 
 
 SSfit2 <- function(par, data, x.init, y.init, SS.weight, par.fixed=par.fixed, tofit = T){
+  
+# standardize variables
+data <- data %>% 
+  mutate(x = gpp/mean(gpp, na.rm = TRUE),
+         x0 = chl/mean(chl, na.rm = TRUE),
+         y = Bt/mean(Bt, na.rm = TRUE),
+         y0 = ifelse(midge == "Midges", y.init.mean/mean(Bt, na.rm = TRUE), 0)) %>% 
+  arrange(coreid)
 
   par.temp <- par.fixed
   par.temp[is.na(par.fixed)] <- par
   par <- par.temp
-
+  
   r <- exp(par[1])
   K <-  exp(par[2])
   a <-  exp(par[3])
   ac <-  exp(par[4])
   Bm <-  exp(par[5])
   gpp.rate <-  exp(par[6])
-
+  
   x <- x.init
   y <- y.init
-
+  
   Tmax <- 22
-
+  
   SS1 <- 0
   SS2 <- 0
   for(t in 1:Tmax){
-
+    
     x.next <- exp(r)*x^K - a*x*y
     y <- y + ac*x*y - Bm*y
     x <- x.next
-
+    
     if(t == 14){
       dif.x <- log(gpp.rate*x) - log(data$x[data$day == 14])
       SS1 <- SS1 + sum(dif.x^2)
-
+      
       sampled.data <- (data$day == 14) & !is.na(data$y) & (data$midge == "Midges")
       sampled.sim <- data$coreid[sampled.data]
       dif.y <- log(y[sampled.sim]) - log(data$y[sampled.data])
       #dif.y <- y[sampled.sim] - data$wt[sampled.data]
       SS2 <- SS2 + sum(dif.y^2)
     }
-
+    
     if(t == 22){
       sampled.data <- data$day == 22
       sampled.sim <- data$coreid[sampled.data]
       dif.x <- log(gpp.rate*x[sampled.sim]) - log(data$x[sampled.data])
       SS1 <- SS1 + sum(dif.x^2)
-
+      
       sampled.data <- (data$day == 22) & (data$midge == "Midges") & !is.na(data$y)
       sampled.sim <- data$coreid[sampled.data]
       dif.y <- log(y[sampled.sim]) - log(data$y[sampled.data])
@@ -226,11 +202,11 @@ init.data <- data %>%
 x.init <- init.data$x0
 y.init <- init.data$y0
 
-SS.weight <- 1
+SS.weight <- 30
 
 par.full2 <- log(c(r, K, a, ac, m, gpp.rate))
-par.fixed <- c(NA, NA, NA, NA, NA, NA)
-par <- par.full2[is.na(par.fixed)]
+par.fixed2 <- c(NA, NA, NA, NA, NA, NA)
+par2 <- par.full2[is.na(par.fixed)]
 
 
 #====Fit2====
@@ -243,87 +219,63 @@ for (i.rep in 1:nrep){
     SSmin <- opt$value
     opt.opt <- opt
   }
-  par <- exp(rnorm(n=length(par), sd=1)) * opt.opt$par
+  par2 <- exp(rnorm(n=length(par), sd=1)) * opt.opt$par
   show(c(opt$value, SSfit(par=opt$par, data=data, x.init = x.init, y.init=y.init, SS.weight = SS.weight, par.fixed=par.fixed, tofit=F)))
 }
-par.temp2 <- par.fixed
+par.temp2 <- par.fixed2
 par.temp2[is.na(par.fixed)] <- opt.opt$par
-par <- par.temp2
+par2 <- par.temp2
 
-r2 <- exp(par[1])
-K2 <- exp(par[2])
-a2 <- exp(par[3])
-ac2 <- exp(par[4])
+r2 <- exp(par2[1])
+K2 <- exp(par2[2])
+a2 <- exp(par2[3])
+ac2 <- exp(par2[4])
 c2 <- ac2/a2
-Bm <- exp(par[5])
-gpp.rate <- exp(par[6])
+Bm <- exp(par2[5])
+gpp.rate <- exp(par2[6])
 round(c(r=r2, K=K2, a=a2, c=c2, m=Bm, gpp.rate=gpp.rate, SS=opt.opt$value), digits=8)
-# r        K        a        c        m gpp.rate       SS
-# 0.187    0.927    0.045    0.163    0.002    0.183   66.817
+
+# r        K        a        c        m gpp.rate       SS 
+# 0.216    0.919    0.034    0.671    0.071    0.161  274.263 
 
 
 
-obssimdat <- data.frame(r = r2,
-                        K = K2,
-                        a = a2,
-                        c = c2,
-                        m = Bm,
-                        Bm = 1,
-                        y.init = unique(data$y0),
-                        Tmax = 22) %>% 
-  crossing(x.init = unqiue(data$x0)) %>% 
+
+obssim <- data.frame(r = r2,
+                     K = K2,
+                     a = a2,
+                     c = c,
+                     m = Bm,
+                     Tmax = 22,
+                     y.init = unique(data$y0)) %>% 
+  crossing(x.init = unique(data$x0)) %>% 
   mutate(paramset = 1:n())
 
-obssim <- trajectory(obssimdat) %>% 
-  left_join(obssimdat)
+chck <- trajectory(obssim) %>% 
+  left_join(obssim)
 
-obssim %>% 
-  rename(x0 = x.init,
-         y0 = y.init,
-         day = t) %>% 
-  mutate(x = x/gpp.rate) %>% 
-  gather(var, est, x, y) %>% 
-  left_join(data %>% select(coreid, algae_conc2, midge, y0, x0, x, y, day) %>% unique() %>% 
-              gather(var, obs, x, y)) %>% 
-  filter(day %in% c(14, 22)) %>% 
-  ggplot(aes(x = obs, y = est, color = algae_conc2))+
-  facet_wrap(~var, scales = "free")+
-  geom_point()+
-  geom_abline(slope = 1)
-# ggpreview(plot = last_plot(), width = 6, height = 4, units = "in", dpi=650)
-
-
-obssim %>% 
-  rename(x0 = x.init,
-         y0 = y.init) %>% 
-  mutate(x =x) %>% 
-  left_join(data %>% select(coreid, algae_conc2, midge, y0, x0)) %>% 
+chck %>% 
+  mutate(x = x*gpp.rate,
+         midge = ifelse(y.init>0, "Midges", "No Midges")) %>% 
   gather(var, val, x, y) %>% 
-  ggplot(aes(x = t, y = val, linetype = var, group = interaction(coreid, var)))+
-  facet_wrap(algae_conc2~midge, scales = "free_y")+
+  ggplot(aes(x = t, y = val, color = var, linetype = midge))+
+  facet_grid(midge~round(x.init, 3))+
   geom_line()+
-  geom_point(aes(shape = var), data = data %>% rename(t= day) %>% gather(var, val, x, y))+
-  geom_point(aes(shape = var), data = data %>% select(-x, -y, -day) %>% rename(x = x0, y = y0) %>% mutate(t = 0) %>% gather(var, val, x, y))+
+  geom_point( alpha = 0.7, position=position_dodge(width = 2), data = data %>% rename(t = day) %>%  gather(var, val, x, y))+
+  geom_point( alpha = 0.7, position= position_dodge(width = 2), data = data %>% select(algae_conc2, midge, x0, y0) %>% mutate(x.init = x0) %>%  rename(x = x0, y = y0) %>%  gather(var, val, x, y) %>% mutate(t = 0))+
   
-  scale_shape_manual(values = c(16,22))
-
-# ggpreview(plot = last_plot(), width = 8, height = 8, units = "in", dpi=650)
-
-
-
-
-#values are quite similar
+  scale_shape_manual(values = c(16,21))
+  
 
 
 simbmdat <- data.frame(r = r2,
-                     Ny = 1,
-                     K = K2,
-                     a = seq(0, 0.2, by = 0.01),
-                     c = c2,
-                     m = Bm,
-                     Bm = 1,
-                     y.init = max(data$y0),
-                     Tmax = 5000) %>%
+                       Ny = 1,
+                       K = K2,
+                       a = seq(0, 0.2, by = 0.01),
+                       c = c2,
+                       m = Bm,
+                       y.init = max(data$y0),
+                       Tmax = 22) %>%
   crossing(x.init = unique(data$x0)) %>%
   mutate(paramset = 1:n())
 
@@ -332,13 +284,10 @@ simbm <- trajectory(simbmdat) %>%
 
 
 simbm %>% 
-  filter(t %in% c(22, 65, Tmax),
+  filter(t %in% c(22),
          y.init>0) %>%
-  mutate(t2 = ifelse(t == 5000, "Equilibrium", paste("t =", t)),
-         t3 = fct_reorder(t2, t, .desc = FALSE) ) %>% 
   ggplot(aes(x = a, y = y-y.init, group = x.init, fill = x.init))+
   geom_vline(xintercept = a2)+
-  facet_wrap(~t3, scales = "free_y", ncol = 1)+
   scale_x_continuous(breaks = c(0, 0.1, 0.2))+
   geom_line()+
   geom_point(shape = 21, alpha = 0.7)+
@@ -374,7 +323,7 @@ simbm %>%
 simbm %>% 
   filter(t %in% c(22),
          y.init>0, 
-         a %in% c(0.02, 0.05, 0.08, 0.15)) %>%
+         a %in% c(0.02, 0.03, 0.08, 0.15)) %>%
   mutate(t2 = ifelse(t == 5000, "Equilibrium", paste("t =", t)),
          t3 = fct_reorder(t2, t, .desc = FALSE)) %>% 
   ggplot(aes(x = exp(r)*x^K, y = y-y.init, fill = x.init))+
