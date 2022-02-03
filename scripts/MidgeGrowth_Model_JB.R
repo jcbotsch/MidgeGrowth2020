@@ -783,10 +783,12 @@ obsmod <- trajectory(sim) %>%
 
 obsmod %>% 
   ggplot(aes(x = t, y = val, col = var, linetype = midge, shape = midge))+
-  facet_wrap(~round(algae_conc2, 3), ncol = 2)+
+  facet_wrap(~round(algae_conc2, 3), ncol = 3, scales = "free_y")+
   geom_line(aes(y = y, col = "Midge"))+
   geom_line(aes(y = x*gpp.rate, col = "Algae"))+
   geom_point(aes(y = val, color = taxon, x = day), alpha = 0.5, position = position_dodge(width = 2),  data = data %>% rename(Midge = y, Algae = x) %>%  gather(taxon, val, Midge, Algae))+
+  geom_point(aes(y = val, color = taxon), alpha = 0.5, position = position_dodge(width = 2),  data = init.data %>% rename(Midge = y0, Algae = x0) %>% mutate(t = 1, midge = ifelse(Midge>0, "Midges", "No Midges")) %>%   gather(taxon, val, Midge, Algae))+
+  
   # scale_y_continuous("Algae", sec.axis = sec_axis(~./5, "Midges"))+
   scale_linetype_manual(values = c("solid", "dotted"))+
   scale_shape_manual(values = c(16,21))+
@@ -864,7 +866,7 @@ obsmoda %>%
   geom_vline(xintercept = aest)+
   facet_wrap(~var, scales = 'free')+
   geom_line()+
-  scale_color_gradient(trans = "log2", low = "goldenrod", high = "darkgreen")
+  scale_color_gradient(trans = "log", low = "goldenrod", high = "darkgreen")
 
 
 
