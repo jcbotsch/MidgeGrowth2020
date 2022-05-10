@@ -197,7 +197,8 @@ cm <- cm_raw %>%
          body_size = (body_size/body_size_mag)/conversion *1000,
          day = if_else(sampledate == "2020-08-21", 14,
                         if_else(sampledate == "2020-08-07", 0, 22))) %>% 
-  filter(head_size>70) %>%  #first instar head size is 75. there is one individual with a lower head size that was damaged.
+  filter(head_size>70,#first instar head size is 75. there is one individual with a lower head size that was damaged.
+         species_name == "tt") %>%  # there are two non-Tanytarsus
   select(coreid, sampledate, day, species_name, head_size, body_size, instar, comments)
 
 

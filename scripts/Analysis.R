@@ -6,6 +6,7 @@ library(gridExtra)
 library(lme4)
 library(car)
 library(broom)
+library(cowplot)
 
 #Define function to give NA if all NAs else give mean
 meanna <- function(x){
@@ -36,7 +37,7 @@ theme_set(theme_bw()+
 
 midge_color <- scale_color_manual(values = c("Midges" = "black", "No Midges" = "gray60"))
 midge_fill <- scale_fill_manual(values = c("Midges" = "black", "No Midges" = "gray60"))
-
+midge_lines <- scale_linetype_manual(values = c("Midges" = "solid", "No Midges" = "dashed"))
 
 
 #====read in files====
@@ -57,6 +58,41 @@ topredict <- data.frame(algae_conc2 = rep(unique(meta$algae_conc2), 4),
                         midge = rep(rep(c("Midges", "No Midges"), each = 10), 2),
                         box = rep(c("1", "2"), each = 20)) %>% 
   mutate(midge = fct_relevel(midge, "No Midges", "Midges"))
+
+#model matrix used for all regressions
+mm <- model.matrix(~log(algae_conc2)*midge + box, topredict) 
+
+
+mm[,"box2"] <- 0.5
+
+mm <- unique(mm)
+
+#fix predicted names
+fix.names <- function(preddata){
+  preddata %>% 
+    select(-1) %>% 
+    rename(algae_conc2 = 1, midge = 2, box = 3, algae_conc2_x_midge = 4) %>% 
+    mutate(midge = ifelse(midge == 1, "Midges", "No Midges"),
+           algae_conc2 = exp(algae_conc2))
+}
+
+#get estimates and standard errors
+mod_predict <- function(model.matrix, model, mixed.effects.model = FALSE){
+  
+  if(!mixed.effects.model){
+    est <- model.matrix %*% coef(model)
+    vcov <- as.matrix(vcov(model))
+    se <- apply(model.matrix, 1, function(x){sqrt(t(x) %*% vcov %*% x) })
+    return(fix.names(data.frame(model.matrix, estimate = est, se = se)))
+  }
+  if(mixed.effects.model){
+    est <- model.matrix %*% fixef(model)
+    vcov <- as.matrix(vcov(model))
+    se <- apply(model.matrix, 1, function(x){sqrt(t(x) %*% vcov %*% x) })
+    return(fix.names(data.frame(model.matrix, estimate = est, se = se)))
+  }
+  
+}
 
 #====Figure 1: Chorophyll and organic content in stock sediment====
 omplot <- om %>% 
@@ -116,38 +152,9 @@ summary(g14log)
 summary(update(g14log, .~. -log(algae_conc2):midge))
 # plot(g14log)
 
-#####
-model.matrix(g14log)
-mmg14 <- model.matrix(~log(algae_conc2)*midge + box, topredict) 
-
-
-mmg14[,"box2"] <- 0.5
-
-mmg14 <- unique(mmg14)
-
-#calculate estimates
-ests14 <- mmg14 %*% coef(g14log) 
-
-g14vcov <- as.matrix(vcov(g14log))
-
-g14se <- apply(mmg14, 1, function(x){sqrt(t(x) %*% g14vcov %*% x) })
-
-predictedg14 <- data.frame(mmg14, estimate= ests14, se = g14se)
-
-predictedg14 %>% 
-  mutate(upper = exp(estimate+2*se),
-         lower = exp(estimate-2*se),
-         estimate= exp(estimate),
-         midge = ifelse(midgeMidges ==1, "Midges", "No Midges"),
-         algae_conc2 = exp(log.algae_conc2.)) %>% 
-  ggplot(aes(x = algae_conc2, y= estimate))+
-  geom_ribbon(aes(ymin = lower, ymax = upper, fill = midge), alpha = 0.5)+
-  geom_line(aes(group = midge), col = "black")+
-  geom_line(aes(y = gpp, group = midge), data = predicted14)+
-  scale_x_continuous(trans = "log")+
-  scale_y_continuous(trans = "log")
-####
-
+#get predictions and standard errors
+predicted14 <- mod_predict(model.matrix = mm, model = g14log) %>% 
+  mutate(day = "Day 14")
 
 nep22 <- nep %>% 
   filter(day == 22)  %>% 
@@ -156,46 +163,32 @@ nep22 <- nep %>%
 g22log <- lm(log(gpp)~log(algae_conc2)*midge+box, data = nep22)
 summary(g22log)
 summary(update(g22log, .~. -log(algae_conc2):midge))
-
 # plot(g22log)
 
-gppchange <- nep %>% 
-  mutate(midge = fct_relevel(midge, c("No Midges", "Midges"))) %>% 
-  group_by(coreid) %>% 
-  mutate(laggpp  = lag(gpp)) %>%
-  filter(!is.na(laggpp))
-
-gchange <- lm(gpp~laggpp*midge+box, data = gppchange)
-summary(gchange)
-summary(update(gchange, .~.-laggpp:midge))
-
-predicted14 <- topredict %>% 
-  mutate(gpp = predict(g14log, ., type = "response")) %>% 
-  group_by(algae_conc2, midge) %>% 
-  summarise(gpp = exp(mean(gpp))) %>% 
-  mutate(day = "Day 14")
-
-predicted22 <- topredict %>% 
-  mutate(gpp = predict(g22log, ., type = "response")) %>% 
-  group_by(algae_conc2, midge) %>% 
-  summarise(gpp = exp(mean(gpp))) %>% 
+predicted22 <- mod_predict(model.matrix = mm, model = g22log) %>% 
   mutate(day = "Day 22")
 
-gpredict <- rbind(predicted14, predicted22)
+gpredict <- rbind(predicted14, predicted22) %>%
+  mutate(gpp = exp(estimate),
+         upper = exp(estimate+se),
+         lower = exp(estimate-se))
 
 #====Figure 2: GPP====
 nepfig <- nep %>% 
   mutate(day = paste("Day", day)) %>% 
   ggplot(aes(x = algae_conc2, y = gpp, fill = midge))+
   facet_wrap(~day, ncol = 1)+
+  geom_ribbon(aes(ymin = lower, ymax = upper, fill = midge, linetype = midge), color = "black", size = 0.2, alpha = 0.5, data = gpredict, show.legend = FALSE)+
   geom_point(size  = 2, alpha = 0.75, shape = 21, position = position_jitterdodge(dodge.width = 0.3, jitter.width = 0.1, jitter.height = 0))+
-  geom_line(aes(color = midge), size = 0.7, data = gpredict)+
+  geom_line(aes(linetype = midge), size = 0.7, data = gpredict)+
   midge_color+
   midge_fill+ 
+  midge_lines+
   labs(x = "Sediment Treatment",
        y = expression("GPP "~(g~O[2]~m^{-2}~hr^{-1})),
        color = "",
-       fill = "")+
+       fill = "",
+       linetype = "")+
   scale_y_continuous(trans = "log", breaks = c(0.005, 0.015, 0.05))+
   scale_x_continuous(trans = "log", breaks = c(0.01, 0.1, 1))+
   theme(legend.position = c(0.5,0.95),
@@ -206,6 +199,30 @@ nepfig <- nep %>%
 
 plot(nepfig)
 # ggpreview(plot = nepfig, dpi = 650, width = 80, height = 80, units = "mm")
+
+nepfig2 <- nep %>% 
+  mutate(day = paste("Day", day)) %>% 
+  ggplot(aes(x = algae_conc2, y = gpp, fill = midge))+
+  facet_wrap(~day, ncol = 2)+
+  geom_ribbon(aes(ymin = lower, ymax = upper, fill = midge, linetype = midge), color = "black", size = 0.2, alpha = 0.5, data = gpredict, show.legend = FALSE)+
+  geom_point(size  = 2, alpha = 0.75, shape = 21, position = position_jitterdodge(dodge.width = 0.3, jitter.width = 0.1, jitter.height = 0))+
+  geom_line(aes(linetype = midge), size = 0.7, data = gpredict)+
+  midge_color+
+  midge_fill+ 
+  midge_lines+
+  labs(x = "Sediment Treatment",
+       y = expression("GPP "~(g~O[2]~m^{-2}~hr^{-1})),
+       color = "",
+       fill = "",
+       linetype = "")+
+  scale_y_continuous(trans = "log", breaks = c(0.005, 0.015, 0.05))+
+  scale_x_continuous(trans = "log", breaks = c(0.01, 0.1, 1))+
+  theme(legend.position = "none",
+        legend.direction = "horizontal",
+        legend.text.align = 0,
+        legend.key = element_rect(fill = NA),
+        legend.background = element_rect(fill = NA, color = NA))
+
 
 #Supplemental Figure
 
@@ -273,19 +290,16 @@ summary(update(nm22log, .~. -log(algae_conc2):midge))
 
 #extract fits
 
-predicted14 <- topredict %>% 
-  mutate(fit = predict(nm14log, ., type = "link")) %>% 
-  group_by(algae_conc2, midge) %>% 
-  summarise(live_tt = exp(mean(fit))) %>% 
+predicted14 <- mod_predict(mm, nm14log) %>% 
   mutate(day = "Day 14")
 
-predicted22 <- topredict %>% 
-  mutate(fit = predict(nm22log, ., type = "link")) %>% 
-  group_by(algae_conc2, midge) %>% 
-  summarise(live_tt = exp(mean(fit))) %>% 
+predicted22 <- mod_predict(mm, nm22log) %>% 
   mutate(day = "Day 22")
 
-nmpredict <- rbind(predicted14, predicted22)
+nmpredict <- rbind(predicted14, predicted22) %>% 
+  mutate(live_tt = exp(estimate),
+         upper = exp(estimate+se),
+         lower = exp(estimate-se))
 
 #how many midges out of the total stocked (1,000) survived?
 cc %>% 
@@ -309,16 +323,18 @@ nmidge_fig <- cc %>%
   mutate(day = paste("Day", day)) %>% 
   ggplot(aes(x = algae_conc2, y = live_tt, fill = midge))+
   facet_wrap(~day, ncol = 1)+
+  geom_ribbon(aes(ymin = lower, ymax = upper, fill = midge, linetype = midge), color = "black", size = 0.2, alpha = 0.5, data = nmpredict, show.legend = FALSE)+
   geom_point(size  = 2, alpha = 0.7, shape = 21, position = position_jitter(width = 0.1, height = 0))+
   geom_hline(yintercept = 20, linetype = "dashed", alpha = 0.5)+
   # geom_smooth(aes(color = midge), method = "glm", size = 0.75, se = FALSE, method.args = list(family = quasipoisson()) )+
-  geom_line(aes(color = midge), data = nmpredict)+
+  geom_line(aes(linetype = midge), data = nmpredict)+
   midge_color+
   midge_fill+ 
   labs(x = "Sediment Treatment",
        y = "Number of Larvae",
        color = "",
-       fill = "")+
+       fill = "",
+       linetype = "")+
   scale_x_continuous(trans = "log", breaks = c(0.01, 0.1, 1))+
   theme(legend.position = c(0.5,0.95),
         legend.text.align = 0,
@@ -329,6 +345,30 @@ nmidge_fig <- cc %>%
 plot(nmidge_fig)
 # ggpreview(plot = nmidge_fig, dpi = 650, width = 80, height = 80, units = "mm")
 
+
+nm_fig2 <- cc %>% 
+  filter(day %in% c(14, 22)) %>% 
+  mutate(day = paste("Day", day)) %>% 
+  ggplot(aes(x = algae_conc2, y = live_tt, fill = midge))+
+  facet_wrap(~day, ncol = 2)+
+  geom_ribbon(aes(ymin = lower, ymax = upper, fill = midge, linetype = midge), color = "black", size = 0.2, alpha = 0.5, data = nmpredict, show.legend = FALSE)+
+  geom_point(size  = 2, alpha = 0.7, shape = 21, position = position_jitter(width = 0.1, height = 0))+
+  geom_hline(yintercept = 20, linetype = "dashed", alpha = 0.5)+
+  # geom_smooth(aes(color = midge), method = "glm", size = 0.75, se = FALSE, method.args = list(family = quasipoisson()) )+
+  geom_line(aes(linetype = midge), size = 0.7, data = nmpredict)+
+  midge_color+
+  midge_fill+ 
+  labs(x = "Sediment Treatment",
+       y = "Number of Larvae",
+       color = "",
+       fill = "",
+       linetype = "")+
+  scale_x_continuous(trans = "log", breaks = c(0.01, 0.1, 1))+
+  theme(legend.position = "none",
+        legend.text.align = 0,
+        legend.key = element_rect(fill = NA),
+        legend.background = element_rect(fill = NA, color = NA),
+        legend.direction = "horizontal")
 
 ##====Q2.2: Midge Development (SUPPLEMENT)====
 cm <- cm_raw %>% 
@@ -389,19 +429,16 @@ summary(update(prop22log, .~. -log(algae_conc2):midge))
 
 
 
-predicted14 <- topredict %>% 
-  mutate(fit = predict(prop14log, ., type = "link")) %>% 
-  group_by(algae_conc2, midge) %>% 
-  summarise(prop = exp(mean(fit))) %>% 
+predicted14 <- mod_predict(mm, prop14log) %>% 
   mutate(day = "Day 14")
-
-predicted22 <- topredict %>% 
-  mutate(fit = predict(prop22log, ., type = "link")) %>% 
-  group_by(algae_conc2, midge) %>% 
-  summarise(prop = exp(mean(fit))) %>% 
+  
+predicted22 <- mod_predict(mm, prop22log) %>% 
   mutate(day = "Day 22")
 
-propredict <- rbind(predicted14, predicted22)
+propredict <- rbind(predicted14, predicted22) %>% 
+  mutate(prop = exp(estimate),
+         upper = exp(estimate+se),
+         lower = exp(estimate-se))
 
 
 
@@ -410,17 +447,19 @@ propredict <- rbind(predicted14, predicted22)
 prop_fig <- p2 %>% 
   mutate(day = paste("Day", day)) %>% 
   ggplot(aes(y = prop, x = algae_conc2))+
+  geom_hline(yintercept = startingprop, alpha = 0.75, color = "orange")+
+  geom_ribbon(aes(ymin = lower, ymax = upper, fill = midge, linetype = midge), color = "black", size = 0.2, alpha = 0.5, data = propredict, show.legend = FALSE)+
   geom_point(aes(fill = midge), shape = 21, alpha = 0.75, size = 2, position = position_jitterdodge(dodge.width = 0.1, jitter.width = 0.1, jitter.height = 0))+
-  geom_line(aes(color = midge), data = propredict)+
-  geom_hline(yintercept = startingprop, alpha = 0.75, linetype = "dashed")+
+  geom_line(aes(linetype = midge), data = propredict)+
   facet_wrap(~day, nrow = 2)+
-  lims(y = c(0,1))+
   labs(x = "Sediment Treatment",
        y = "Proportion of Larvae in 2nd Instar",
        color = NULL,
-       fill = NULL)+
+       fill = NULL,
+       linetype = NULL)+
   midge_color+
   midge_fill+ 
+  midge_lines+
   theme(legend.position = "bottom")+
   scale_x_continuous(trans = "log", breaks = c(0.01, 0.1, 1))+
   theme(legend.position = c(0.8,0.35),
@@ -473,19 +512,16 @@ summary(update(bl22log, .~. -log(algae_conc2):midge))
 Anova(update(bl22log, .~. -log(algae_conc2):midge), type = "2", test.statistic = "F") #drops interaction
 
 
-predicted14 <- topredict %>% 
-  mutate(fit = predict(bl14log, newdata = ., re.form = NA, type = "response")) %>% 
-  group_by(algae_conc2, midge) %>% 
-  summarise(body_size = mean(fit)) %>% 
+predicted14 <- mod_predict(mm, bl14log, mixed.effects.model = TRUE) %>% 
   mutate(day = "Day 14")
 
-predicted22 <- topredict %>% 
-  mutate(fit = predict(bl22log, newdata = ., re.form = NA, type = "response")) %>% 
-  group_by(algae_conc2, midge) %>% 
-  summarise(body_size = mean(fit)) %>% 
+predicted22 <- mod_predict(mm, bl22log, mixed.effects.model = TRUE) %>% 
   mutate(day = "Day 22")
 
-blpredict <- rbind(predicted14, predicted22)
+blpredict <- rbind(predicted14, predicted22) %>% 
+  mutate(body_size = estimate, 
+         lower = estimate-se,
+         upper = estimate+se)
 
 
 #====Figure 5: Body Length====
@@ -501,14 +537,17 @@ blfig <- cm %>%
   ggplot(aes(x = algae_conc2, y = body_size))+
   facet_wrap(~day, ncol = 1)+
   geom_hline(yintercept = start_length, linetype = 2, size = 0.5)+
-  geom_point(aes(fill = midge), size  = 1.5, alpha = 0.75, shape = 21, stroke = 0.2, position = position_jitterdodge(dodge.width = 0.4, jitter.width = 0.2, jitter.height = 0))+
-  geom_line(aes(col = midge), size = 0.7, data = blpredict)+
+  geom_ribbon(aes(ymin = lower, ymax = upper, fill = midge, linetype = midge), color = "black", size = 0.2, alpha = 0.5, data = blpredict, show.legend = FALSE)+
+  geom_point(aes(fill = midge), size  = 1.5, alpha = 0.6, shape = 21, stroke = 0.2, position = position_jitterdodge(dodge.width = 0.4, jitter.width = 0.2, jitter.height = 0))+
+  geom_line(aes(linetype = midge), size = 0.7, data = blpredict)+
   midge_color+
   midge_fill+ 
+  midge_lines+
   labs(y = "Body Length (mm)",
        x = "Sediment Treatment",
        color = "",
-       fill = "")+
+       fill = "",
+       linetype = "")+
   scale_x_continuous(trans = "log", breaks = c(0.01, 0.1, 1))+
   theme(legend.position = c(0.5,0.95),
         legend.text.align = 0,
@@ -521,113 +560,47 @@ plot(blfig)
 
 
 
+blfig2 <- cm %>% 
+  filter(day %in% c(14, 22),
+         !is.na(body_size)) %>% 
+  mutate(day = paste("Day", day)) %>% 
+  ggplot(aes(x = algae_conc2, y = body_size))+
+  facet_wrap(~day, ncol = 2)+
+  geom_hline(yintercept = start_length, linetype = 2, size = 0.5, alpha = 0.5)+
+  geom_ribbon(aes(ymin = lower, ymax = upper, fill = midge, linetype = midge), color = "black", size = 0.2, alpha = 0.5, data = blpredict, show.legend = FALSE)+
+  geom_point(aes(fill = midge), size  = 1.5, alpha = 0.6, shape = 21, stroke = 0.2, position = position_jitterdodge(dodge.width = 0.4, jitter.width = 0.2, jitter.height = 0))+
+  geom_line(aes(linetype = midge), size = 0.7, data = blpredict)+
+  midge_color+
+  midge_fill+ 
+  midge_lines+
+  labs(y = "Body Length (mm)",
+       x = "Sediment Treatment",
+       color = "",
+       fill = "",
+       linetype = "")+
+  scale_x_continuous(trans = "log", breaks = c(0.01, 0.1, 1))+
+  theme(legend.position = "none",
+        legend.text.align = 0,
+        legend.key = element_rect(fill = NA),
+        legend.background = element_rect(fill = NA, color = NA),
+        legend.direction = "horizontal")
+
 # ggpreview(plot = blfig, dpi = 650, width = 80, height = 80, units = "mm")
 # ggsave(plot = last_plot(), filename = "Botsch_MG_Fig5.pdf", device = "pdf", dpi = 650, width = 80, height = 80, units = "mm")
 
-cm %>% 
-  filter(!is.na(instar)) %>% 
-  ggplot(aes(x = factor(instar), y = body_size))+
-  geom_jitter(height = 0, shape = 21, alpha = 0.5, fill = "gray50")+
-  scale_fill_viridis(trans = "log", breaks = c(0.01, 0.1, 1))+
-  labs(y = "Body Length (mm)",
-       x = "Instar")
-# ggpreview(plot = last_plot(), dpi = 650, width = 80, height = 80, units = "mm")
 
 
-#=====NDVI======
-ndvi <- ndvi %>% 
-  left_join(meta) %>% 
-  mutate(box = as.character(box))
+#====Combine All Plots into one figure====
 
-ndvi14 <- ndvi %>% filter(day == 14)
-ndvi22 <- ndvi %>% filter(day == 22)
+figcomb <- plot_grid(nepfig2, nm_fig2+ theme(axis.title.y = element_text(margin = margin(t = 0, r = 5, b = 0, l = 15))), blfig2+theme(axis.title.y = element_text(margin = margin(t = 0, r = 10, b = 0, l = 15))), ncol = 1, labels = c("A", "B", "C"))
 
-#How do midges affect mean surface ENDVI?
-e14 <- lm(ENDVI~log(algae_conc2)*midge+box, data = ndvi14)
-summary(e14)
-summary(update(e14, .~.-log(algae_conc2):midge))
+ggpreview(figcomb, width = 6, height = 6, units = "in", dpi = 650)
 
-e22 <- lm(ENDVI~log(algae_conc2)*midge+box, data = ndvi22)
-summary(e22)
-summary(update(e22, .~.-log(algae_conc2):midge))
+leg <- get_legend(nepfig+theme(legend.direction = "vertical", legend.position = "right"))
 
-#how do midges and initial concentration affect standardized variation in ENDVI
-ec14 <- lm(ENDVI_cv~log(algae_conc2)*midge+box, data = ndvi14)
-summary(ec14)
-summary(update(ec14, .~.-log(algae_conc2):midge))
+figcomb2 <- plot_grid(figcomb, leg, rel_widths = c(0.85, 0.15))
 
-ec22 <- lm(ENDVI_cv~log(algae_conc2)*midge+box, data = ndvi22)
-summary(ec22)
-summary(update(ec22, .~.-log(algae_conc2):midge))
-
-#how do midges and initial concentration affect the degree of spatial autocorrelation in ENDVI (at the 1mm scale)
-em14 <- lm(ENDVI_1mmI~log(algae_conc2)*midge+box, data = ndvi14)
-summary(em14)
-summary(update(em14, .~.-log(algae_conc2):midge))
-
-em22 <- lm(ENDVI_cv~log(algae_conc2)*midge+box, data = ndvi22)
-summary(em22)
-summary(update(em22, .~.-log(algae_conc2):midge))
-
-
-#association between NDVI and GPP
-ndvi %>% 
-  left_join(nep %>% 
-              select(coreid, gpp, nep, resp) %>% 
-              mutate(coreid = as.numeric(coreid))) %>% 
-  lm(gpp~ENDVI*day, data = .) %>% 
-  summary()
-#the days appear to differ in their relationship with ENDVI and gpp. ENDVi values are often lower on day 14
-
-ndvi %>% 
-  left_join(nep %>% 
-              select(coreid, gpp, nep, resp) %>% 
-              mutate(coreid = as.numeric(coreid))) %>%
-  ggplot(aes(x =  ENDVI, y = gpp, color = factor(day)))+
-  geom_point(aes(fill = algae_conc2), size = 2, shape = 21)+
-  geom_smooth(method = "lm")+
-  scale_fill_viridis_c(trans = "log", breaks = c(0.01, 0.1, 1))
-
-
-ndvi %>% 
-  left_join(nep %>% 
-              select(coreid, gpp, nep, resp) %>% 
-              mutate(coreid = as.numeric(coreid))) %>%
-  ggplot(aes(x =  ENDVI_cv, y = gpp, color = factor(day)))+
-  geom_point()+
-  geom_smooth(method = "lm")
-
-#how is ENDVI and spatial variability associated with midges
-ndvi %>% 
-  left_join(cc %>% 
-              mutate(coreid = as.numeric(coreid)) %>% 
-              select(coreid, live_tt)) %>% 
-  ggplot(aes(x = live_tt, y = ENDVI, fill = algae_conc2))+
-  facet_wrap(~day, scales = "free")+
-  geom_point(shape = 21)+
-  scale_fill_viridis_c(trans = "log", breaks  = c(0.01, 0.1, 1))
-
-
-
-ndvi %>% 
-  left_join(cc %>% 
-              mutate(coreid = as.numeric(coreid)) %>% 
-              select(coreid, live_tt)) %>% 
-  ggplot(aes(x = live_tt, y = ENDVI_cv, fill = algae_conc2))+
-  facet_wrap(~day, scales = "free")+
-  geom_point(aes(fill = algae_conc2), shape = 21, size =2)+
-  scale_fill_viridis_c(trans = "log", breaks  = c(0.01, 0.1, 1))
-
-ndvi %>% 
-  left_join(cc %>% 
-              mutate(coreid = as.numeric(coreid)) %>% 
-              select(coreid, live_tt)) %>% 
-  ggplot(aes(x = live_tt, y = ENDVI_1mmI, fill = algae_conc2))+
-  facet_wrap(~day, scales = "free")+
-  geom_point(shape = 21)+
-  scale_fill_viridis_c(trans = "log", breaks  = c(0.01, 0.1, 1))
-
-
+ggpreview(figcomb2, width = 6, height = 6, units = "in", dpi = 650)
 
 #=====Primary and Secondary Production=====
 set.seed(12345)
