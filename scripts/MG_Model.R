@@ -20,15 +20,17 @@ cc_raw <- read_csv("clean data/MG_cc.csv")
 ndvi_raw <- read_csv("clean data/MG_ndvi.csv")
 
 #====Prepare Data====
+#chlorophll data
 chl <- chl_raw %>% 
   left_join(meta) %>% 
   group_by(algae_conc2) %>% 
   summarise(chl = mean(chl, na.rm = TRUE)/1000) 
 
-
+#primary production
 gpp <- ep_raw %>% 
   select(coreid, day, gpp)
 
+#midge data
 midge <- cc_raw %>% 
   select(coreid, day, live_tt) %>%
   left_join(meta %>% select(coreid, algae_conc2)) %>% 
@@ -39,8 +41,6 @@ midge <- cc_raw %>%
   arrange(day, coreid) %>% 
   mutate(Bt = ifelse(live_tt ==0, 0, wt*live_tt)) 
 
-
-
 #Join 
 data <- gpp %>% 
   full_join(meta %>% 
@@ -48,7 +48,6 @@ data <- gpp %>%
   full_join(chl) %>% 
   left_join(midge) %>% 
   select(algae_conc2, midge, day, coreid, everything())
-
 
 # midge weights at time 0
 init.midges <- midge %>% 
@@ -61,7 +60,6 @@ data <- data %>%
   filter(day>0) %>% 
   arrange(day, coreid)
 
-
 # standardize variables
 data <- data %>% 
   mutate(x = gpp/mean(gpp, na.rm = TRUE),
@@ -70,9 +68,7 @@ data <- data %>%
          y0 = ifelse(midge == "Midges", y.init.mean/mean(wt, na.rm = TRUE), 0)) %>% 
   arrange(coreid)
 
-
 #====estimate parameters====
-
 # start values
 r <- .5
 K <- .9
@@ -95,11 +91,11 @@ par.full <- log(c(r, K, a, ac, m, gpp.rate))
 par.fixed <- c(NA, NA, NA, NA, NA, NA)
 par <- par.full[is.na(par.fixed)]
 
-
 #====Fit====
 set.seed(12345)
 SSmin <- 10^10
 nrep <- 10
+
 for (i.rep in 1:nrep){
   opt <- optim(par = par, fn=SSfit, data=data, x.init = x.init, y.init = y.init, SS.weight = SS.weight, par.fixed=par.fixed, method = "SANN")
   opt <- optim(par = opt$par, fn=SSfit, data=data, x.init = x.init, y.init = y.init, SS.weight = SS.weight, par.fixed=par.fixed, method = "Nelder-Mead")
@@ -114,6 +110,7 @@ par.temp <- par.fixed
 par.temp[is.na(par.fixed)] <- opt.opt$par
 par <- par.temp
 
+#extract fitted parameters
 r <- exp(par[1])
 K <- exp(par[2])
 a <- exp(par[3])
@@ -125,8 +122,7 @@ round(c(r=r, K=K, a=a, c=c, m=m, gpp.rate=gpp.rate, SS=opt.opt$value), digits=4)
 # r        K        a        c        m       gpp.rate       SS 
 # 0.1725   0.9290   0.0447   0.1788   0.0015 0.2088       66.8795 
 
-
-#====Plot Model and Data used to estimate parameters====
+#====Simulate to compare with observations====
 #simulate model as is 
 sim <- data.frame(x.init = unique(data$x0),
                   r = exp(par[1]),
@@ -134,7 +130,6 @@ sim <- data.frame(x.init = unique(data$x0),
                   a = exp(par[3]),
                   c = exp(par[4])/exp(par[3]), 
                   m = exp(par[5]),
-                  Ny = 1,
                   Tmax = 22) %>% 
   crossing(y.init = unique(data$y0)) %>% 
   mutate(paramset = 1:n())
@@ -148,15 +143,14 @@ obsmod <- trajectory(sim) %>%
               rename(x.init = x0, y.init=y0) %>% 
               mutate(midge = ifelse(y.init>0, "Midges", "No Midges")))
 
-
 #plot
 mod_data <- obsmod %>% 
   ggplot(aes(x = t, y = val, col = var, linetype = midge, shape = midge))+
   facet_wrap(~round(algae_conc2, 3), ncol = 3, scales = "free_y")+
   geom_line(aes(y = y, col = "Midge"))+
   geom_line(aes(y = x*gpp.rate, col = "Algae"))+
-  geom_point(aes(y = val, color = taxon, x = day), alpha = 0.5, position = position_dodge(width = 2),  data = data %>% rename(Midge = y, Algae = x) %>%  gather(taxon, val, Midge, Algae))+
-  geom_point(aes(y = val, color = taxon), alpha = 0.5, position = position_dodge(width = 2),  data = init.data %>% rename(Midge = y0, Algae = x0) %>% mutate(t = 1, midge = ifelse(Midge>0, "Midges", "No Midges")) %>%   gather(taxon, val, Midge, Algae))+
+  geom_point(aes(y = val, color = taxon, x = day), alpha = 0.5, position = position_dodge(width = 2),  data = data %>% rename(Midge = y, Algae = x) %>%  gather(taxon, val, Midge, Algae)%>% filter(!(taxon == "Midge" & midge == "No Midges")))+
+  geom_point(aes(y = val, color = taxon), alpha = 0.5, position = position_dodge(width = 2),  data = init.data %>% select(algae_conc2, x0, y0) %>% unique() %>% mutate(x0 = gpp.rate *x0) %>% rename(Midge = y0, Algae = x0) %>% mutate(t = 1, midge = ifelse(Midge>0, "Midges", "No Midges")) %>%   gather(taxon, val, Midge, Algae))+
   # scale_y_continuous("Algae", sec.axis = sec_axis(~./5, "Midges"))+
   scale_linetype_manual(values = c("solid", "dotted"))+
   scale_shape_manual(values = c(16,21))+
@@ -168,7 +162,7 @@ mod_data <- obsmod %>%
        y = "Scaled Biomass")
 # ggpreview(plot = mod_data, dpi = 650, width = 5, height = 6, units = "in")
 
-#====Vary attack rates====
+#====Varying attack rates====
 #parameters to simulate
 sima <- data.frame( a = c(seq(0, 0.4, by = 0.001), a),
                     K = K,
@@ -176,7 +170,6 @@ sima <- data.frame( a = c(seq(0, 0.4, by = 0.001), a),
                     c = c, 
                     m = m,
                     Bm = 0,
-                    Ny = 1,
                     Tmax = 22) %>% 
   crossing(x.init = unique(data$x0)) %>% 
   crossing(y.init = unique(data$y0)) %>% 
@@ -201,19 +194,44 @@ arange <- obsmoda %>%
   geom_vline(xintercept = aest)+
   geom_line(size = 1.1)+
   geom_line(aes(color = x.init))+
-  labs(x = "\u03b1",
-       y = "Standardized Consumer Growth",
+  labs(x = "Attack rate of Consumer on Resource",
+       y = "Consumer Growth",
+       color = "Initial Resource Biomass")+
+  guides(color = guide_colorbar(title.position = "top", title.hjust = 0.5))+
+  scale_color_viridis_c(trans = "log", breaks = c(0.25, 1,4))
+
+#plot consumers and resources
+arange2 <- obsmoda %>% 
+  group_by(x.init, a) %>% 
+  mutate(cumsumx = cumsum(exp(r)*x^K)) %>% 
+  filter(t == Tmax,
+         y.init>0) %>% 
+  mutate(cumsumy = y-y.init) %>% 
+  gather(var, val, cumsumx, x, y, cumsumy) %>% 
+  mutate(t = ifelse(str_detect(var, "cumsum"), "Cumulative", "Day 22"),
+         var = ifelse(var == "x", "Resource",
+                      ifelse(var == "y", "Consumer", 
+                             ifelse(var == "cumsumx", "Resource", "Consumer")))) %>% 
+  ggplot(aes(x = a, y = val, fill = x.init, group = x.init))+
+  facet_wrap(var~t, scales = "free_y", ncol = 2)+
+  geom_vline(xintercept = aest)+
+  geom_line(size = 1.1)+
+  geom_line(aes(color = x.init))+
+  labs(x = "Attack rate of Consumer on Resource",
+       y = "Biomass at Day 22",
        color = "Initial Resource Biomass")+
   guides(color = guide_colorbar(title.position = "top", title.hjust = 0.5))+
   scale_color_viridis_c(trans = "log", breaks = c(0.25, 1,4))
 
 # ggpreview(plot = arange, width = 3, height = 4, units = "in", dpi = 650)
+# ggpreview(plot = arange2, width = 3, height = 5, units = "in", dpi = 650)
 
-#extract optima
+
+##Plot Trajectories of Optimal Attack Rates
 optima <- obsmoda %>% 
   filter(t == Tmax,
-         y.init>0) %>% 
-  filter(y-y.init==max(y-y.init)) %>% 
+         y.init>0,
+         y-y.init == max(y-y.init)) %>%
   pull(a)
 
 
@@ -221,20 +239,18 @@ optims <- obsmoda %>%
   filter(t == Tmax,
          y.init>0) %>% 
   group_by(x.init) %>% 
-  filter(y-y.init==max(y-y.init)) %>% 
+  filter(y-y.init == max(y-y.init)) %>% 
   select(x.init, a)
 
-#plot variation in optima 
-optims %>% 
-  bind_rows(crossing(a = optima, x.init = optims$x.init)) %>% 
-  left_join(obsmoda %>% filter(y.init>0)) %>% 
+#plot trajectories 
+obsmoda %>% 
+  filter(a == optima,
+         y.init != 0) %>% 
   rename(resource = x, consumer = y) %>% 
   gather(var, val, resource, consumer) %>% 
-  mutate(al = ifelse(x.init < 4 & a != optima, "optimum", "max optimum")) %>% 
   ggplot(aes(x = t, y = val, color = var))+
-  facet_wrap(~round(x.init, digits = 3), scales = "free_y")+
-  geom_line(aes( linetype = al))+
-  geom_text(aes(y = 0.1, x = 15, label = a), color = "gray40", data = optims)+
+  facet_wrap(~round(x.init, digits = 2))+
+  geom_line()+
   lims(y = c(0, NA))+
   labs(y = "Biomass",
        color = element_blank(),
@@ -243,59 +259,51 @@ optims %>%
 # ggpreview(plot = last_plot(), width  = 6, height = 6.5, units = "in", dpi = 650)
 
 
+#====Plot biomasses with different attack rates====
 plota <- obsmoda %>% 
   filter(t %in% c(Tmax),
          y.init>0,
          a %in% c(aest, 0.2)) %>% 
-  bind_rows(optims %>% 
-              left_join(obsmoda %>% 
-                          filter(y.init>0,
-                                 t %in% c(22)))) %>% 
+  bind_rows(obsmoda %>% filter(t == 22, y.init != 0) %>% right_join(optims)) %>%
   mutate(al = ifelse(a == aest, 
-                     "\u03b1 = \u03b1 est", 
-      ifelse(a == 0.2, paste("\u03b1 = ", a), "\u03b1 = \u03b1 opt")),
-         al = fct_reorder(al, a, min)) %>% 
-  ggplot(aes(x = exp(r)*x^K, y = y-y.init, fill = x.init))+
-  facet_wrap(~al, scales = "free", labeller = label_value, ncol = 1)+
+                     "a == a[est]", 
+      ifelse(a == 0.2, paste("a==", a), "a == a[opt]")),
+         al = fct_reorder(al, a)) %>% 
+  ggplot(aes(y = x, x = y, fill = x.init))+
+  facet_wrap(~al, scales = "free", labeller = label_parsed, ncol = 1)+
   geom_path(aes(group = t))+
-  labs(x = "Standardized Primary Production",
-       y = "Standardized Consumer Growth",
+  labs(y = "Resource Biomass",
+       x = "Consumer Biomass",
        fill = "Initial Resource Biomass",
        shape = element_blank())+
   geom_point(shape = 22, size = 2)+
   guides(fill = guide_colorbar(title.position = "top", title.hjust = 0.5, barheight = 0.5, barwidth = 8))+
   scale_fill_viridis_c(trans = "log", breaks = c(0.25, 1,4))+
-  scale_x_continuous(n.breaks= 3)+
-  scale_y_continuous(n.breaks = 3)
+  scale_x_continuous(n.breaks= 4)+
+  scale_y_continuous(n.breaks = 5)
 
 plotas <- obsmoda %>% 
   filter(t %in% c(14),
          y.init>0,
          a %in% c(aest, 0.2)) %>% 
-  bind_rows(optims %>% 
-              left_join(obsmoda %>% 
-                          filter(y.init>0,
-                                 t %in% c(14)))) %>% 
+  bind_rows(obsmoda %>% filter(t == 14, y.init != 0) %>% right_join(optims)) %>%
   mutate(al = ifelse(a == aest, 
-                     "\u03b1 = \u03b1 est", 
-                     ifelse(a == 0.2, paste("\u03b1 = ", a), "\u03b1 = \u03b1 opt")),
-         al = fct_reorder(al, a, min)) %>% 
-  ggplot(aes(x = exp(r)*x^K, y = y-y.init, fill = x.init))+
-  facet_wrap(~al, scales = "free", labeller = label_value, ncol = 1)+
+                     "a == a[est]", 
+                     ifelse(a == 0.2, paste("a==", a), "a == a[opt]")),
+         al = fct_reorder(al, a)) %>% 
+  ggplot(aes(y = x, x = y, fill = x.init))+
+  facet_wrap(~al, scales = "free", labeller = label_parsed, ncol = 1)+
   geom_path(aes(group = t))+
-  labs(x = "Standardized Primary Production",
-       y = "Standardized Consumer Growth",
+  labs(y = "Resource Biomass",
+       x = "Consumer Biomass",
        fill = "Initial Resource Biomass",
        shape = element_blank())+
-  geom_point(shape = 21, size = 2)+
+  geom_point(shape = 22, size = 2)+
   guides(fill = guide_colorbar(title.position = "top", title.hjust = 0.5, barheight = 0.5, barwidth = 8))+
   scale_fill_viridis_c(trans = "log", breaks = c(0.25, 1,4))+
-  scale_x_continuous(n.breaks= 3)+
-  scale_y_continuous(n.breaks = 3)
-
-
+  scale_x_continuous(n.breaks= 4)+
+  scale_y_continuous(n.breaks = 5)
 # ggpreview(plot = last_plot(), width = 3, height = 4, units = "in", dpi = 650)
-
 
 #trajectories
 obsmoda %>% 
@@ -304,11 +312,13 @@ obsmoda %>%
   rename(consumer = y, resource = x) %>% 
   filter(x.init %in% unique(.$x.init)[c(1,6,10)]) %>%
   gather(var, val, consumer, resource) %>%
-  mutate(facetlab = paste("\u03b1 = ", a),
-         facetlab = fct_reorder(facetlab, a)) %>% 
+  mutate(al = ifelse(a == aest, 
+                     "a == a[est]", 
+                     ifelse(a == 0.2, paste("a==", a), "a == a[opt]")),
+         al = fct_reorder(al, a)) %>% 
   mutate(val = ifelse(var == "consumer", val, val)) %>% 
   ggplot(aes(x = t, y = val))+
-  facet_grid(facetlab~paste( "x0 = ", round(x.init,1)), scales = "free_y")+
+  facet_grid(al~paste( "x0 == ", round(x.init,1)), labeller = label_parsed, scales = "free_y")+
   geom_line(aes(col = var, group = interaction(var, x.init)))+
   # geom_point(aes(fill = x.init), shape = 21)+
   labs(x = "t",
@@ -320,9 +330,56 @@ obsmoda %>%
 
 # ggpreview(plot = last_plot(), width = 6, height  = 6, units = "in", dpi = 650)
 
+#====Optimal attack rates over different timescales====
+sima2 <- data.frame( a = c(seq(0, 0.4, by = 0.01), a),
+                     K = K,
+                     r = r,
+                     c = c, 
+                     m = m,
+                     Bm = 0,
+                     Tmax = 1000) %>% 
+  crossing(x.init = max(data$x0)) %>% 
+  crossing(y.init = max(data$y0)) %>% 
+  mutate(paramset = 1:n())
+
+#simulate
+amod2 <- trajectory(sima2) %>% 
+  left_join(sima2)
+
+arange14 <- obsmoda %>% 
+  filter(t == 14,
+         y.init>0) %>% 
+  ggplot(aes(x = a, y = y-y.init, fill = x.init, group = x.init))+
+  geom_vline(xintercept = aest)+
+  geom_line(size = 1.1)+
+  geom_line(aes(color = x.init))+
+  labs(x = "Attack rate of Consumer on Resource",
+       y = "Consumer Growth",
+       color = "Initial Resource Biomass")+
+  guides(color = guide_colorbar(title.position = "top", title.hjust = 0.5))+
+  scale_color_viridis_c(trans = "log", breaks = c(0.25, 1,4))
+
+arangeTS <- amod2 %>% 
+  filter(t %in% c(30, 60, 100, 1000)) %>% 
+  ggplot(aes(x = a, y = y-y.init))+
+  geom_line()+
+  facet_wrap(~t, scales = "free")+
+  # geom_point()+
+  geom_vline(xintercept = aest)+
+  labs(x = "Attack rate of Consumer on Resource",
+       y = "Consumer Growth",
+       color = "Initial Resource Biomass")+
+  guides(color = guide_colorbar(title.position = "top", title.hjust = 0.5))+
+  scale_color_viridis_c(trans = "log", breaks = c(0.25, 1,4))
+
+plot_grid(arange14, arangeTS)
+ggpreview(plot = last_plot(), width = 6, height = 4, units = "in", dpi = 650)
+
 #====Varying Resource Growth Rates====
+#set ranges 
 rrange <- c(0.5, 1.5, 2.5)
 
+#parameters to simulate
 simr <- data.frame( a = aest,
                     K = K,
                     rrange = rrange,
@@ -330,54 +387,52 @@ simr <- data.frame( a = aest,
                     c = c, 
                     m = m,
                     Bm = 0,
-                    Ny = 1,
                     Tmax = 22) %>% 
   crossing(x.init = unique(data$x0)) %>% 
   crossing(y.init = max(data$y0)) %>% 
   mutate(paramset = 1:n())
 
-
+#simulate
 rmod <- trajectory(simr) %>% 
   left_join(simr)
 
+#====Plot Biomasses across resource growth rates====
 plot1 <- rmod %>% 
   filter(t%in% c(Tmax)) %>% 
-  ggplot(aes(x = exp(r)*x^K, y = y-y.init, fill = x.init))+
+  ggplot(aes(y = x, x = y, fill = x.init))+
   facet_wrap(~paste("r = ", rrange, "\u00D7 r"), scales = "free", ncol = 1)+
   geom_path(aes(group  = t))+
-  labs(x = "Standardized Primary Production",
-       y = "Standardized Consumer Growth",
+  labs(y = "Resource Biomass",
+       x = "Consumer Biomass",
        fill = "Initial Resource Biomass")+
   geom_point(shape = 22, size = 2)+
   guides(fill = guide_colorbar(title.position = "top", title.hjust = 0.5, barheight = 0.5, barwidth = 8))+
   scale_fill_viridis_c(trans = "log", breaks = c(0.25, 1,4))+
-  scale_x_continuous(n.breaks= 3)+
-  scale_y_continuous(n.breaks = 3)
+  scale_x_continuous(n.breaks= 4)+
+  scale_y_continuous(n.breaks = 5)
 
-
+#T = 14
 plot1s <- rmod %>% 
   filter(t%in% c(14)) %>% 
-  ggplot(aes(x = exp(r)*x^K, y = y-y.init, fill = x.init))+
+  ggplot(aes(y = x, x = y, fill = x.init))+
   facet_wrap(~paste("r = ", rrange, "\u00D7 r"), scales = "free", ncol = 1)+
   geom_path(aes(group  = t))+
-  labs(x = "Standardized Primary Production",
-       y = "Standardized Consumer Growth",
+  labs(y = "Resource Biomass",
+       x = "Consumer Biomass",
        fill = "Initial Resource Biomass")+
-  geom_point(shape = 21, size = 2)+
+  geom_point(shape = 22, size = 2)+
   guides(fill = guide_colorbar(title.position = "top", title.hjust = 0.5, barheight = 0.5, barwidth = 8))+
   scale_fill_viridis_c(trans = "log", breaks = c(0.25, 1,4))+
-  scale_x_continuous(n.breaks= 3)+
-  scale_y_continuous(n.breaks = 3)
-
-
+  scale_x_continuous(n.breaks= 4)+
+  scale_y_continuous(n.breaks = 5)
 
 #plot trajectories
 rmod %>% 
   rename(consumer = y, resource = x) %>%
   gather(var, val, consumer, resource) %>% 
   filter(x.init %in% unique(.$x.init)[c(1,6,10)]) %>%
-  ggplot(aes(x = t, y = val))+
-  facet_grid(paste("change in growth rate = ",rrange)~paste("x0 =",round(x.init, 2)), scales = "free_y")+
+  ggplot(aes(x = t, y = val, color = x.init, shape = var))+
+  facet_grid(paste("r = ",rrange, "\u00D7 r")~paste("x0 =",round(x.init, 1)), scales = "free_y")+
   geom_line(aes(color = var, group = interaction(var, r)))+
   labs(x = "t",
        y = "Biomass",
@@ -385,24 +440,107 @@ rmod %>%
        color = "")+
   guides(fill = guide_colorbar(title.position = "top", title.hjust = 0.5))+
   scale_fill_viridis_c(option = "plasma")
+# ggpreview(plot = last_plot(), width = 6, height  = 6, units = "in", dpi = 650)
+
+
+rmod %>% 
+  rename(consumer = y, resource = x) %>%
+  # gather(var, val, consumer, resource) %>% 
+  filter(x.init %in% unique(.$x.init)[c(1,6,10)]) %>%
+  ggplot(aes(x = t, y = resource, color = factor(round(x.init, 2))))+
+  facet_wrap(~paste("change in growth rate = ",rrange), scales = "free_y")+
+  geom_line(aes(y = consumer, group = interaction(r, x.init)), size = 1.5, color = "black")+
+  geom_line(aes( group = interaction(r, x.init)), size = 1.5, color = "black")+
+  geom_line(aes(y = consumer, group = interaction(r, x.init), linetype = "consumer"))+
+  geom_line(aes( group = interaction(r, x.init), linetype = "resource"))+
+  labs(x = "t",
+       y = "Biomass",
+       fill = "Initial Resource Availability",
+       color = "Initial Resource Availability",
+       linetype = "")+
+  guides(fill = guide_colorbar(title.position = "top", title.hjust = 0.5))+
+  scale_color_viridis_d(option = "plasma")
+
+#====Simulate resource growth rates over longer timescales=====
+simr2 <- data.frame( a = aest,
+                    K = K,
+                    rrange = rrange,
+                    r = rrange*r,
+                    c = c, 
+                    m = m,
+                    Bm = 0,
+                    Tmax = 10000) %>% 
+  crossing(x.init = unique(data$x0)[c(1,6,10)]) %>% 
+  crossing(y.init = max(data$y0)) %>% 
+  mutate(paramset = 1:n())
+
+rmod2 <- trajectory(simr2) %>% 
+  left_join(simr2)
+
+rmod2 %>% 
+  rename(consumer = y, resource = x) %>%
+  # gather(var, val, consumer, resource) %>% 
+  ggplot(aes(x = t, y = resource, color = factor(round(x.init, 2))))+
+  facet_wrap(~paste("change in growth rate = ",rrange), scales = "free_y")+
+  geom_line(aes(y = consumer, group = interaction(r, x.init)), size = 1.5, color = "black")+
+  geom_line(aes( group = interaction(r, x.init)), size = 1.5, color = "black")+
+  geom_line(aes(y = consumer, group = interaction(r, x.init), linetype = "consumer"))+
+  geom_line(aes( group = interaction(r, x.init), linetype = "resource"))+
+  labs(x = "t",
+       y = "Biomass",
+       fill = "Initial Resource Availability",
+       color = "Initial Resource Availability",
+       linetype = "")+
+  guides(fill = guide_colorbar(title.position = "top", title.hjust = 0.5))+
+  scale_color_viridis_d(option = "plasma")
+
+rmod2 %>% 
+  rename(consumer = y, resource = x) %>%
+  gather(var, val, consumer, resource) %>%
+  ggplot(aes(x = t, y = val, color = factor(round(x.init, 2))))+
+  facet_grid(~paste("change in growth rate = ",rrange), scales = "free_y")+
+  # geom_line(aes(y = val, group = interaction(r, x.init)), size = 1.5, color = "black")+
+  geom_line(aes(color = factor(round(x.init,2)), y = val, group = interaction(var, r, x.init), linetype = var), alpha = 0.5)+
+  labs(x = "t",
+       y = "Biomass",
+       fill = "Initial Resource Availability",
+       color = "Initial Resource Availability",
+       linetype = "")+
+  guides(fill = guide_colorbar(title.position = "top", title.hjust = 0.5))+
+  scale_color_viridis_d(option = "plasma")
+
+
+
+rmod2 %>% 
+  filter(t == max(t)) %>% 
+  rename(consumer = y, resource = x) %>%
+  gather(var, val, consumer, resource) %>%
+  ggplot(aes(x = x.init, y = val, color = factor(round(x.init, 2))))+
+  facet_wrap(~var, scales = "free_y")+
+  geom_path(aes(color = factor(rrange), shape = var, y = val, group = interaction(r)))+
+  geom_point(aes(color = factor(rrange), shape = var, y = val, group = interaction(r, x.init)))+
+  labs(x = "initial Resource Availability",
+       y = "Biomass",
+       fill = "Initial Resource Availability",
+       color = "Resource Growth Rate multiplier",
+       linetype = "")+
+  guides(fill = guide_colorbar(title.position = "top", title.hjust = 0.5))+
+  scale_color_viridis_d(option = "plasma")
 
 # ggpreview(plot = last_plot(), width = 6, height  = 6, units = "in", dpi = 650)
 
-# simulate across a range of attack rates
+#====Simulate optimal attack rate using different resource growth rates====
 ar <- data.frame( a = c(seq(0, 0.2, by = 0.001), a),
                   K = K,
                   y.init = max(data$y0),
                   c = c, 
                   m = m,
                   Bm = 0,
-                  Ny = 1,
                   Tmax = 22) %>% 
   crossing(x.init = unique(data$x0)) %>% 
   crossing(rrange =c(0.5, 1.5)) %>% 
   mutate(r= r*rrange) %>% 
   mutate(paramset = 1:n())
-
-
 
 simar <- trajectory(ar) %>% 
   left_join(ar)
@@ -414,135 +552,134 @@ simar %>%
   facet_wrap(~paste(rrange, "\u00D7 Resource Growth Rate"), scales = "free")+
   geom_line(size = 1.1)+
   geom_line(aes(color = x.init))+
-  labs(x = "\u03b1",
+  labs(x = "a",
        y = "Standardized Consumer Growth",
        color = "Initial Resource Biomass")+
   guides(color = guide_colorbar(title.position = "top", title.hjust = 0.5))+
   scale_color_viridis_c(trans = "log", breaks = c(0.25, 1,4))
 
+#====Varying initial x biomass and resource growth====
+simanyr <- data.frame( a = aest,
+                    K = K,
+                    r = seq(0, 0.4, by = 0.0001),
+                    c = c, 
+                    m = m,
+                    Bm = 0,
+                    Tmax = 22) %>% 
+  crossing(x.init = 1) %>% 
+  crossing(y.init = max(data$y0)) %>% 
+  mutate(paramset = 1:n())
 
-#====Vary Consumer Density====
+#simulate
+rfull <- trajectory(simanyr) %>% 
+  left_join(simanyr) 
 
-simxy <- data.frame( a = aest,
+#
+simx0 <- data.frame( a = aest,
             K = K,
             r = r,
             c = c, 
             m = m,
             Bm = 0,
-            Ny = c(0.5, 5, 30),
             Tmax = 22) %>% 
-  crossing(x.init = c(unique(data$x0))) %>% 
+  crossing(x.init = seq(0,10, by = 0.01)) %>% 
   crossing(y.init = max(data$y0)) %>% 
   mutate(paramset = 1:n())
 
 
-xyres <- trajectory(simxy) %>% 
-  left_join(simxy)
+nrange <- trajectory(simx0) %>% 
+  left_join(simx0) 
+
+rntradeoff <- rfull %>% 
+  filter(t == Tmax) %>% 
+  select(t, r, x, y, x.init_4 = x.init) %>% 
+  mutate(y = round(y, digits = 4)) %>% 
+  left_join(nrange %>% 
+              mutate(y = round(y, digits = 4)) %>% 
+              filter(t == Tmax) %>% 
+              select(x.init, y)) %>% 
+  filter(!is.na(x.init)) 
+
+rntradeoff %>% 
+  ggplot(aes(x = x.init, y = r, group = x.init_4))+
+  geom_line()+
+  geom_point(aes(size= y), shape = 21)+
+  scale_x_continuous(trans = "log", breaks = c(0.1, 1, 10))
 
 
+rntradeoff %>% 
+  lm(r~log(x.init), data = .) %>% 
+  summary()
 
-plot2 <- xyres %>% 
-  filter(t%in% c(Tmax)) %>% 
-  mutate(facetlab = paste("Ny = ", Ny),
-         facetlab = fct_reorder(facetlab, Ny)) %>% 
-  ggplot(aes(x = exp(r)*x^K, y = y-y.init, fill = x.init))+
-  facet_wrap(~facetlab, scales = "free", ncol = 1)+
-  geom_path(aes(group = t))+
-  labs(x = "Standardized Primary Production",
-       y = "Standardized Consumer Growth",
-       fill = "Initial Resource Biomass")+
-  geom_point(shape = 22, size = 2)+
-  guides(fill = guide_colorbar(title.position = "top", title.hjust = 0.5, barheight = 0.5, barwidth = 8))+
-  scale_fill_viridis_c(trans = "log", breaks = c(0.25, 1,4))+
-  scale_x_continuous(n.breaks= 3)+
-  scale_y_continuous(n.breaks = 3)
-
-plot2s <- xyres %>% 
-  filter(t%in% c(14)) %>% 
-  mutate(facetlab = paste("Ny = ", Ny),
-         facetlab = fct_reorder(facetlab, Ny)) %>% 
-  ggplot(aes(x = exp(r)*x^K, y = y-y.init, fill = x.init))+
-  facet_wrap(~facetlab, scales = "free", ncol = 1)+
-  geom_path(aes(group = t))+
-  labs(x = "Standardized Primary Production",
-       y = "Standardized Consumer Growth",
-       fill = "Initial Resource Biomass")+
-  geom_point(shape = 21, size = 2)+
-  guides(fill = guide_colorbar(title.position = "top", title.hjust = 0.5, barheight = 0.5, barwidth = 8))+
-  scale_fill_viridis_c(trans = "log", breaks = c(0.25, 1,4))+
-  scale_x_continuous(n.breaks= 3)+
-  scale_y_continuous(n.breaks = 3)
-
-
-#trajectories
-xyres %>% 
-  rename(consumer = y, resource = x) %>% 
-  filter(x.init %in% unique(xyres$x.init)[c(1,6,10)]) %>%
-  gather(var, val, consumer, resource) %>%
-  mutate(facetlab = paste("Ny = ", Ny),
-         facetlab = fct_reorder(facetlab, Ny)) %>% 
-  ggplot(aes(x = t, y = val))+
-  facet_grid(facetlab~paste( "x0 = ", round(x.init,1)), scales = "free_y")+
-  geom_line(aes(col = var, group = interaction(var, x.init)))+
-  # geom_point(aes(fill = x.init), shape = 21)+
-  labs(x = "t",
-       y = "Biomass",
-       fill = "Initial Resource Biomass",
-       color = "")+
-  guides(fill = guide_colorbar(title.position = "top", title.hjust = 0.5))+
-  scale_fill_viridis_c(trans = "log", breaks = c(0.25, 1,4))
-
-# ggpreview(plot = last_plot(), width = 6, height  = 6, units = "in", dpi = 650)
-
-#simulate across a range of attack rates
-an <- data.frame( a = c(seq(0, 0.05, by = 0.001), a),
-                  K = K,
-                  r = r,
-                  c = c, 
-                  m = m,
-                  Bm = 0,
-                  y.init = max(y.init),
-                  Tmax = 22) %>% 
-  crossing(x.init = unique(data$x0)) %>% 
-  crossing(Ny = c(5)) %>% 
+simequi <- data.frame( a = aest,
+                    K = K,
+                    r = seq(0, 0.4, by = 0.01),
+                    c = c, 
+                    m = m,
+                    Bm = 0,
+                    Tmax = 22) %>% 
+  crossing(x.init = seq(0,8, by = 0.1)) %>% 
+  crossing(y.init = max(data$y0)) %>% 
   mutate(paramset = 1:n())
 
-anx <- data.frame( a = c(seq(0, 0.05, by = 0.001), a),
-                  K = K,
-                  r = r,
-                  c = c, 
-                  m = m,
-                  Bm = 0,
-                  y.init = max(y.init),
-                  Tmax = 22) %>% 
-  crossing(x.init = unique(data$x0)) %>% 
-  crossing(Ny = c(30)) %>% 
-  mutate(paramset = 1:n())
+equi2 <- trajectory(simequi) %>% 
+  left_join(simequi) 
+
+nb <- 10
+
+min <- equi2 %>% 
+  filter(y>y.init) %>% 
+  summarise(min = min(y-y.init)) %>% 
+  pull(min)
+  
+logbreaks <- round(exp(seq(log(0.1), log(max(equi2$y-equi2$y.init)), length.out = nb)), 2)[2:nb-1]
+equip <- equi2 %>% 
+  filter(t == Tmax) %>% 
+  ggplot(aes(x = x.init, y = r))+
+  geom_tile(aes(fill = y-y.init))+
+  geom_contour(aes(z = y-y.init, colour = ..level..), breaks = logbreaks)+
+  geom_rug(aes(x = x.init, y = r), data = sim)+
+  scale_fill_gradient2(high = "black", low = "dodgerblue", mid = "white", midpoint = 0)+
+  labs(x = "Initial Resource Biomass",
+       y = "Resource Growth Rate",
+       fill = "Consumer\nGrowth")+
+  scale_color_viridis_c(option = "plasma")
+
+equipf <- directlabels::direct.label(equip, list("far.from.others.borders", "calc.boxes", "enlarge.box", 
+                          box.color = NA, fill = "transparent", "draw.rects", hjust = 1, vjust = 1, cex = 0.75))
+
+
+equip2 <- equi2 %>% 
+  filter(t == Tmax) %>% 
+  ggplot(aes(x = x.init, y = r))+
+  geom_tile(aes(fill = x*gpp.rate))+
+  geom_contour(aes(z = x*gpp.rate, col = ..level..), bins = 10)+
+  geom_rug(aes(x = x.init, y = r), data = sim)+
+  scale_fill_gradient2(high = "black", low = "dodgerblue", mid = "white", midpoint = 0)+
+  labs(x = "Initial Resource Biomass",
+       y = "Resource Growth Rate",
+       fill = "Resource\nBiomass")+
+  scale_color_viridis_c(guide = NULL)
 
 
 
-siman <- trajectory(an) %>% 
-  left_join(an) %>% 
-  bind_rows(trajectory(anx) %>% 
-              left_join(anx))
-#plot
-siman %>% 
-  filter(t == Tmax,
-  ) %>% 
-  ggplot(aes(x = a, y = y-y.init,  group = x.init))+
-  facet_wrap(~paste("Consumer Density =", Ny), scales = "free")+
-  geom_line(size = 1.1)+
-  geom_line(aes(color = x.init))+
-  labs(x = "\u03b1",
-       y = "Standardized Consumer Growth",
-       color = "Initial Resource Biomass")+
-  guides(color = guide_colorbar(title.position = "top", title.hjust = 0.5))+
-  scale_color_viridis_c(trans = "log", breaks = c(0.25, 1,4))
+equipf2 <- directlabels::direct.label(equip2, list("far.from.others.borders", "calc.boxes", "enlarge.box", 
+                                       box.color = NA, fill = "transparent", "draw.rects", hjust = 1, vjust = 1, cex = 0.75))
+
+equipcomb <- plot_grid(equipf + ggtitle("A")+ theme(axis.title = element_blank(), plot.title = element_text(face = "bold"), legend.position = "right"), 
+                       equipf2 + ggtitle("B")+ theme(axis.title = element_blank(),plot.title = element_text(face = "bold"), legend.position = "right"), 
+                       ncol = 1)
+
+y.grob1 <- textGrob("Resource Growth Rate", rot=90)
+
+x.grob1 <- textGrob("Initial Resource Biomass")
+
+equipfinal <- grid.arrange(equipcomb, left = y.grob1, bottom = x.grob1)
 
 
+ggpreview(plot = equipfinal, width = 3, height = 5, units = "in", dpi = 650)
 #====Combine PP and SP plots====
 zplot <- plot_grid( plota +theme(axis.title = element_blank(), legend.position = "none"),
-                    plot2+ theme(axis.title = element_blank(), legend.position = "none"), 
                     plot1 + theme(axis.title = element_blank(), legend.position = "none"), 
                     labels = c("A", "B", "C"),
                     nrow = 1)
@@ -550,18 +687,18 @@ leg <- get_legend(plota)
 
 plotfin <- plot_grid(leg, zplot, ncol = 1, rel_heights = c(0.15, 0.85))
 
-y.grob <- textGrob("Standardized Consumer Growth", rot=90)
+y.grob <- textGrob("Resource Biomass", rot=90)
 
-x.grob <- textGrob("Standardized Primary Production")
+x.grob <- textGrob("Consumer Biomass")
 
 comb <- grid.arrange(plotfin, left = y.grob, bottom = x.grob)
 
-# ggpreview(plot = comb, width = 4, height = 5, units = "in", dpi = 650)
+ggpreview(plot = comb, width = 4, height = 5, units = "in", dpi = 650)
 
 
 
 zsplot <- plot_grid( plotas +theme(axis.title = element_blank(), legend.position = "none"),
-                    plot2s+ theme(axis.title = element_blank(), legend.position = "none"), 
+                    # plot2s+ theme(axis.title = element_blank(), legend.position = "none"), 
                     plot1s + theme(axis.title = element_blank(), legend.position = "none"), 
                     labels = c("A", "B", "C"),
                     nrow = 1)
@@ -571,5 +708,5 @@ zs2 <- plot_grid(leg, zsplot, ncol = 1, rel_heights = c(0.15, 0.85))
 
 combs <- grid.arrange(zs2, left = y.grob, bottom = x.grob)
 
-# ggpreview(plot = combs, width = 4, height = 5, units = "in", dpi = 650)
+# ggpreview(plot = combs, width = 3, height = 5, units = "in", dpi = 650)
 

@@ -94,7 +94,6 @@ trajectory <- function(simdat){ # a dataframe containing columns x.init, y.init,
     K <- simdat$K[i]
     c <- simdat$c[i]
     m <- simdat$m[i]
-    Ny <- simdat$Ny[i]
     Tmax <- simdat$Tmax[i]
     
     out <- data.frame(paramset = i, t = 1:Tmax,x = NA, y = NA)
@@ -102,7 +101,7 @@ trajectory <- function(simdat){ # a dataframe containing columns x.init, y.init,
     out$y[1] = y
     for(t in 2:Tmax){
       
-      out$x[t] <- max(0,exp(r)*out$x[t-1]^K - Ny*(a*out$x[t-1]*out$y[t-1])) #growth of algae ##CHECK 
+      out$x[t] <- max(0,exp(r)*out$x[t-1]^K - a*out$x[t-1]*out$y[t-1]) #growth of algae ##CHECK 
       out$y[t] <- max(0, out$y[t-1] + c*a*out$x[t-1]*out$y[t-1] - m) #midge growth
       
     }	
@@ -173,6 +172,8 @@ SSfit <- function(par, data, x.init, y.init, SS.weight, par.fixed=par.fixed, tof
     return(c(SS1,SS.weight*SS2, exp(par), mean(x), mean(y)))
   }
 }
+
+
 #====set aesthetics====
 theme_set(theme_bw()+
             theme(panel.grid = element_blank(),

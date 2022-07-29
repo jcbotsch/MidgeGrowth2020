@@ -83,7 +83,7 @@ nep14 <- nep %>%
   filter(day == 14) %>% 
   mutate(midge = fct_relevel(midge, c("No Midges", "Midges")))
 
-g14log <- lm(log(gpp)~log(algae_conc2)*midge+box, data = nep14) 
+g14log <- lm(gpp~log(algae_conc2)*midge+box, data = nep14) 
 summary(g14log) 
 summary(update(g14log, .~. -log(algae_conc2):midge))
 # plot(g14log)
@@ -96,7 +96,7 @@ nep22 <- nep %>%
   filter(day == 22)  %>% 
   mutate(midge = fct_relevel(midge, c("No Midges", "Midges")))
 
-g22log <- lm(log(gpp)~log(algae_conc2)*midge+box, data = nep22)
+g22log <- lm(gpp~log(algae_conc2)*midge+box, data = nep22)
 summary(g22log)
 summary(update(g22log, .~. -log(algae_conc2):midge))
 # plot(g22log)
@@ -105,9 +105,9 @@ predicted22 <- mod_predict(model.matrix = mm, model = g22log) %>%
   mutate(day = "Day 22")
 
 gpredict <- rbind(predicted14, predicted22) %>%
-  mutate(gpp = exp(estimate),
-         upper = exp(estimate+se),
-         lower = exp(estimate-se))
+  mutate(gpp = (estimate),
+         upper = (estimate+se),
+         lower = (estimate-se))
 
 #====Figure 2: GPP====
 nepfig <- nep %>% 
@@ -125,7 +125,7 @@ nepfig <- nep %>%
        color = "",
        fill = "",
        linetype = "")+
-  scale_y_continuous(trans = "log", breaks = c(0.005, 0.015, 0.05))+
+  # scale_y_continuous(trans = "log", breaks = c(0.005, 0.015, 0.05))+
   scale_x_continuous(trans = "log", breaks = c(0.01, 0.1, 1))+
   theme(legend.position = c(0.5,0.95),
         legend.direction = "horizontal",
@@ -151,7 +151,7 @@ nepfig2 <- nep %>%
        color = "",
        fill = "",
        linetype = "")+
-  scale_y_continuous(trans = "log", breaks = c(0.005, 0.015, 0.05))+
+  # scale_y_continuous(trans = "log", breaks = c(0.005, 0.015, 0.05))+
   scale_x_continuous(trans = "log", breaks = c(0.01, 0.1, 1))+
   theme(legend.position = "none",
         legend.direction = "horizontal",
@@ -516,3 +516,4 @@ figcomb3 <- grid.arrange(figcomb2, bottom = x.grob)
 
 
 # ggpreview(figcomb3, width = 5, height = 6, units = "in", dpi = 650)
+
