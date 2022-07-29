@@ -559,58 +559,7 @@ simar %>%
   scale_color_viridis_c(trans = "log", breaks = c(0.25, 1,4))
 
 #====Varying initial x biomass and resource growth====
-simanyr <- data.frame( a = aest,
-                    K = K,
-                    r = seq(0, 0.4, by = 0.0001),
-                    c = c, 
-                    m = m,
-                    Bm = 0,
-                    Tmax = 22) %>% 
-  crossing(x.init = 1) %>% 
-  crossing(y.init = max(data$y0)) %>% 
-  mutate(paramset = 1:n())
-
-#simulate
-rfull <- trajectory(simanyr) %>% 
-  left_join(simanyr) 
-
-#
-simx0 <- data.frame( a = aest,
-            K = K,
-            r = r,
-            c = c, 
-            m = m,
-            Bm = 0,
-            Tmax = 22) %>% 
-  crossing(x.init = seq(0,10, by = 0.01)) %>% 
-  crossing(y.init = max(data$y0)) %>% 
-  mutate(paramset = 1:n())
-
-
-nrange <- trajectory(simx0) %>% 
-  left_join(simx0) 
-
-rntradeoff <- rfull %>% 
-  filter(t == Tmax) %>% 
-  select(t, r, x, y, x.init_4 = x.init) %>% 
-  mutate(y = round(y, digits = 4)) %>% 
-  left_join(nrange %>% 
-              mutate(y = round(y, digits = 4)) %>% 
-              filter(t == Tmax) %>% 
-              select(x.init, y)) %>% 
-  filter(!is.na(x.init)) 
-
-rntradeoff %>% 
-  ggplot(aes(x = x.init, y = r, group = x.init_4))+
-  geom_line()+
-  geom_point(aes(size= y), shape = 21)+
-  scale_x_continuous(trans = "log", breaks = c(0.1, 1, 10))
-
-
-rntradeoff %>% 
-  lm(r~log(x.init), data = .) %>% 
-  summary()
-
+#parameters
 simequi <- data.frame( a = aest,
                     K = K,
                     r = seq(0, 0.4, by = 0.01),
@@ -622,17 +571,15 @@ simequi <- data.frame( a = aest,
   crossing(y.init = max(data$y0)) %>% 
   mutate(paramset = 1:n())
 
+#simulate
 equi2 <- trajectory(simequi) %>% 
   left_join(simequi) 
 
-nb <- 10
-
-min <- equi2 %>% 
-  filter(y>y.init) %>% 
-  summarise(min = min(y-y.init)) %>% 
-  pull(min)
-  
+#plotting 
+nb <- 10 #number of breaks
 logbreaks <- round(exp(seq(log(0.1), log(max(equi2$y-equi2$y.init)), length.out = nb)), 2)[2:nb-1]
+
+#plot
 equip <- equi2 %>% 
   filter(t == Tmax) %>% 
   ggplot(aes(x = x.init, y = r))+
@@ -648,7 +595,6 @@ equip <- equi2 %>%
 equipf <- directlabels::direct.label(equip, list("far.from.others.borders", "calc.boxes", "enlarge.box", 
                           box.color = NA, fill = "transparent", "draw.rects", hjust = 1, vjust = 1, cex = 0.75))
 
-
 equip2 <- equi2 %>% 
   filter(t == Tmax) %>% 
   ggplot(aes(x = x.init, y = r))+
@@ -661,38 +607,33 @@ equip2 <- equi2 %>%
        fill = "Resource\nBiomass")+
   scale_color_viridis_c(guide = NULL)
 
-
-
 equipf2 <- directlabels::direct.label(equip2, list("far.from.others.borders", "calc.boxes", "enlarge.box", 
                                        box.color = NA, fill = "transparent", "draw.rects", hjust = 1, vjust = 1, cex = 0.75))
 
+#====Combine Initial Biomass and resource growth plots====
 equipcomb <- plot_grid(equipf + ggtitle("A")+ theme(axis.title = element_blank(), plot.title = element_text(face = "bold"), legend.position = "right"), 
                        equipf2 + ggtitle("B")+ theme(axis.title = element_blank(),plot.title = element_text(face = "bold"), legend.position = "right"), 
                        ncol = 1)
 
 y.grob1 <- textGrob("Resource Growth Rate", rot=90)
-
 x.grob1 <- textGrob("Initial Resource Biomass")
 
 equipfinal <- grid.arrange(equipcomb, left = y.grob1, bottom = x.grob1)
-
-
 ggpreview(plot = equipfinal, width = 3, height = 5, units = "in", dpi = 650)
+
 #====Combine PP and SP plots====
 zplot <- plot_grid( plota +theme(axis.title = element_blank(), legend.position = "none"),
                     plot1 + theme(axis.title = element_blank(), legend.position = "none"), 
-                    labels = c("A", "B", "C"),
+                    labels = c("A", "B"),
                     nrow = 1)
-leg <- get_legend(plota)
 
+leg <- get_legend(plota)
 plotfin <- plot_grid(leg, zplot, ncol = 1, rel_heights = c(0.15, 0.85))
 
 y.grob <- textGrob("Resource Biomass", rot=90)
-
 x.grob <- textGrob("Consumer Biomass")
 
 comb <- grid.arrange(plotfin, left = y.grob, bottom = x.grob)
-
 ggpreview(plot = comb, width = 4, height = 5, units = "in", dpi = 650)
 
 
