@@ -79,6 +79,12 @@ ftube_r = 0.03/2 #30 mm/ 2 to get radius /1000 to convert to m
 ftube_area = ftube_r^2*pi
 pq = 1 #photosynthetic quotient
 
+#convert gpp from O2 mg m^-2 hr-1 to micrograms of C cm^-2 hr^-1
+gpp_omgm2h_to_cugcm2d <- function(x){
+  y <- (x*18)*(12/32*pq) #daily production of algae in g C m^2d^-1
+  y <- y/10 #convert mg C cm^-2d^-1 to ug C cm^-2 d^-1
+  return(y)
+}
 
 #====Model Functions====
 #function to fit dynamics
@@ -93,7 +99,7 @@ trajectory <- function(simdat){ # a dataframe containing columns x.init, y.init,
     a <- simdat$a[i]
     K <- simdat$K[i]
     c <- simdat$c[i]
-    m <- simdat$m[i]
+    # m <- simdat$m[i]
     Tmax <- simdat$Tmax[i]
     
     out <- data.frame(paramset = i, t = 1:Tmax,x = NA, y = NA)
@@ -102,7 +108,7 @@ trajectory <- function(simdat){ # a dataframe containing columns x.init, y.init,
     for(t in 2:Tmax){
       
       out$x[t] <- max(0,exp(r)*out$x[t-1]^K - a*out$x[t-1]*out$y[t-1]) #growth of algae ##CHECK 
-      out$y[t] <- max(0, out$y[t-1] + c*a*out$x[t-1]*out$y[t-1] - m) #midge growth
+      out$y[t] <- max(0, out$y[t-1] + c*a*out$x[t-1]*out$y[t-1]) #midge growth
       
     }	
     
@@ -122,8 +128,9 @@ SSfit <- function(par, data, x.init, y.init, SS.weight, par.fixed=par.fixed, tof
   K <-  exp(par[2])
   a <-  exp(par[3])
   ac <-  exp(par[4])
-  m <-  exp(par[5])
-  gpp.rate <-  exp(par[6])
+  # m <-  exp(par[5])
+  # gpp.rate <-  exp(par[6])
+  gpp.rate <- exp(par[5])
   
   x <- x.init
   y <- y.init
@@ -135,7 +142,8 @@ SSfit <- function(par, data, x.init, y.init, SS.weight, par.fixed=par.fixed, tof
   for(t in 1:Tmax){
     
     x.next <- exp(r)*x^K - a*x*y
-    y <- y + ac*x*y - m
+    # y <- y + ac*x*y - m
+    y <- y + ac*x*y
     x <- x.next
     
     if(t == 14){
@@ -173,6 +181,16 @@ SSfit <- function(par, data, x.init, y.init, SS.weight, par.fixed=par.fixed, tof
   }
 }
 
+convert_to_exp_units <- function(dataframe){
+  dataframe %>% 
+    mutate(init.chl = (x.init)*unique(meanx0),
+           gpp = (x*gpp.rate)*unique(meanx),
+           wt = y*unique(meany),
+           gd = (y*meany - y.init*meany)/t,
+           gdc = gd*0.5*1000,
+           gppc = x) %>% 
+    return()
+}
 
 #====set aesthetics====
 theme_set(theme_bw()+

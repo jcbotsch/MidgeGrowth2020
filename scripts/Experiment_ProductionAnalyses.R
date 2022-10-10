@@ -19,7 +19,8 @@ cc_raw <- read_csv("clean data/MG_cc.csv")
 nep <- ep_raw %>% 
   left_join(meta) %>% 
   mutate(coreid = as.character(coreid),
-         box = as.character(box))
+         box = as.character(box),
+         gpp = gpp*1000) #convert GPP from gm-2h-1 to mgm-2h-1
 
 cm <- cm_raw %>% 
   left_join(meta) %>% 
@@ -65,7 +66,7 @@ cm %>%
              summarise(Bt = sumna(wt)))+
   geom_point(aes(fill = algae_conc2), size = 2, shape = 21)+
   labs(x = expression("Midge Biomass g C"~m^{-2}),
-       y = expression("Primary Production g C"~m^{-2}~d^{-1}),
+       y = expression("Primary Production mg C "~m^{-2}~d^{-1}),
        fill = "Sediment Treatment")+
   scale_fill_viridis_c(trans = "log", breaks = c(0.01, 0.1, 1))
 
@@ -167,8 +168,10 @@ total_sp <- eb %>%
 #=====Prepare Data====
 prod_cm <- nep %>% 
   group_by(day, midge, algae_conc2) %>% 
-  mutate(prod = (gpp*18)*(12/32*pq),#daily production of algae in g C m^2d^-1
-         prod = prod*100) %>% #convert g C m^-2d^-1 to ug C cm^-2 d^-1
+  #converted to function
+  # mutate(prod = (gpp*18)*(12/32*pq),#daily production of algae in g C m^2d^-1
+  #        prod = prod/10) %>% #convert mg C cm^-2d^-1 to ug C cm^-2 d^-1
+  mutate(prod = gpp_omgm2h_to_cugcm2d(gpp)) %>% 
   add_count() %>% 
   summarise(n = unique(n),
             mean_pp = mean(prod), #average GPP for a given treatment midge, day, sediment treatment combination

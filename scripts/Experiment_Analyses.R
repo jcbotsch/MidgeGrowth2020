@@ -77,7 +77,8 @@ plot(fig1)
 nep <- ep_raw %>% 
   left_join(meta) %>% 
   mutate(coreid = as.character(coreid),
-         box = as.character(box))
+         box = as.character(box),
+         gpp = gpp*1000) #convert GPP from gm-2h-1 to gcm-2h-1
 
 nep14 <- nep %>% 
   filter(day == 14) %>% 
@@ -121,7 +122,7 @@ nepfig <- nep %>%
   midge_fill+ 
   midge_lines+
   labs(x = "Sediment Treatment",
-       y = expression("GPP "~(g~O[2]~m^{-2}~hr^{-1})),
+       y = expression("GPP "~(mg~O[2]~m^{-2}~hr^{-1})),
        color = "",
        fill = "",
        linetype = "")+
@@ -147,7 +148,7 @@ nepfig2 <- nep %>%
   midge_fill+ 
   midge_lines+
   labs(x = "Sediment Treatment",
-       y = expression("GPP "~(g~O[2]~m^{-2}~hr^{-1})),
+       y = expression("GPP "~(mg~O[2]~m^{-2}~hr^{-1})),
        color = "",
        fill = "",
        linetype = "")+
@@ -500,8 +501,8 @@ blfig2 <- cm %>%
 #====Combine All Plots into one figure====
 
 figcomb <- plot_grid(nepfig2 + theme(axis.title.x = element_blank()), 
-                     nm_fig2+ theme(axis.title.x = element_blank(), axis.title.y = element_text(margin = margin(t = 0, r = 5, b = 0, l = 15))), 
-                     blfig2+theme(axis.title.x = element_blank(), axis.title.y = element_text(margin = margin(t = 0, r = 10, b = 0, l = 15))), ncol = 1, labels = c("A", "B", "C"))
+                     nm_fig2+ theme(axis.title.x = element_blank()), 
+                     blfig2+theme(axis.title.x = element_blank()), ncol = 1, labels = c("A", "B", "C"))
 
 # ggpreview(figcomb, width = 6, height = 6, units = "in", dpi = 650)
 
@@ -515,5 +516,5 @@ x.grob <- textGrob("Sediment Treatment")
 figcomb3 <- grid.arrange(figcomb2, bottom = x.grob)
 
 
-# ggpreview(figcomb3, width = 5, height = 6, units = "in", dpi = 650)
+ggpreview(figcomb3, width = 5, height = 6, units = "in", dpi = 650)
 
