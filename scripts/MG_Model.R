@@ -1,10 +1,11 @@
 #=====load packages====
 library(tidyverse)
 library(cowplot)
-source("scripts/MG_Functions.R")
 library(gridExtra)
 library(grid)
 library(shades)
+source("scripts/MG_Functions.R")
+
 
 options(dplyr.summarise.inform = FALSE)
 
@@ -172,7 +173,7 @@ arange <- obsmoda %>%
   guides(color = guide_colorbar(title.position = "top", title.hjust = 0.5, barheight = 0.5, barwidth = 8))+
   algae_color
 
-ggpreview(plot = arange, width = 3, height = 3.5, units = "in", dpi = 800)
+# ggpreview(plot = arange, width = 3, height = 3.5, units = "in", dpi = 800)
 # ggsave(plot = arange, filename = "figures/Botsch_MidgeGrowth_fig3.pdf", device = "pdf", width = 3, height = 3.5, units = "in", dpi = 800)
 
 #====Figure 4Aa midge growth and pp under different attack rates====
@@ -326,6 +327,6 @@ combt <- grid.arrange(plott, bottom = x.grob2)
 combf <- plot_grid(comb, combt, rel_widths = c(1, 1.2), labels = c("A", "B"), align = "h")
 
 #preview and save
-ggpreview(plot = combf, width = 6, height = 4, units = "in", dpi = 800)
-ggsave(plot = combf, filename = "figures/Botsch_MidgeGrowth_fig4.pdf",  device = "pdf",
-       width = 6.5, height = 4, units = "in", dpi = 800)
+# ggpreview(plot = combf, width = 6, height = 4, units = "in", dpi = 800)
+# ggsave(plot = combf, filename = "figures/Botsch_MidgeGrowth_fig4.pdf",  device = "pdf",
+#        width = 6.5, height = 4, units = "in", dpi = 800)

@@ -6,8 +6,9 @@ library(car)
 library(cowplot)
 library(grid)
 library(gridExtra)
+library(shades)
 source("scripts/MG_Functions.R")
-source("scripts/MG_Model.R")
+source("scripts/MG_Model.R") #this might take some time
 
 #====read in files====
 meta <- read_csv("clean data/MG_meta.csv") %>% 
@@ -78,6 +79,7 @@ env <- hobo %>%
        fill = "")+
   scale_fill_viridis_d()
 
+plot(env)
 # ggpreview(plot = env, dpi = 650, width = 5, height = 3, units = "in")
 
 #====Figure S3: Routine Instars====
@@ -257,6 +259,5 @@ arange14 <- obsmoda %>%
        y = expression("Midge Growth \u03BCg C "~ind^{-1}~d^{-1}),
        color = "Initial Algal Abundance")+
   guides(color = guide_colorbar(title.position = "top", title.hjust = 0.5, barheight = 0.5, barwidth = 8))+
-  saturation(scale_color_viridis_c(trans = "log", breaks = c(0.01, 0.1, 1), end = 0.9), scalefac(5))
-
+  algae_color
 # ggpreview(plot = arange14, width = 3, height = 4, units = "in", dpi = 650)

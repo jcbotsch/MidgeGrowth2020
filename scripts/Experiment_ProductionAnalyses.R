@@ -4,8 +4,8 @@ library(lubridate)
 library(lme4)
 library(car)
 library(phytools)
-source("scripts/MG_Functions.R")
 library(shades)
+source("scripts/MG_Functions.R")
 
 options(dplyr.summarise.inform = FALSE)
 #====read in files====
