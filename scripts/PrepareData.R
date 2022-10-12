@@ -1,37 +1,7 @@
 #====Load Packages====
 library(tidyverse)
 library(lubridate)
-
-sumna <- function(x){
-  if(all(is.na(x))){
-    NA
-  }
-  else{
-    sum(x, na.rm = TRUE)
-  }
-}
-
-meanna <- function(x){
-  if(all(is.na(x))){
-    NA
-  }
-  else{
-    mean(x, na.rm = TRUE)
-  }
-}
-
-ggpreview <- function(...) {
-  fname <- tempfile(fileext = ".png")
-  ggsave(filename = fname, ...)
-  system2("open", fname)
-  invisible(NULL)
-}
-
-#====set aesthetics====
-theme_set(theme_bw()+
-            theme(panel.grid = element_blank(),
-                  strip.background = element_blank(),
-                  legend.position = "bottom"))
+source("MG_Functions.R")
 
 #====Metadata====
 algae <- read_csv("raw data/Algal_Treatments29Oct20.csv")
@@ -63,24 +33,12 @@ loi_raw %>%
 
 loi <- loi_raw %>% 
   select(-comments) %>% 
-  mutate(ww = ww_tray-trayweight,
+  mutate(ww = ww_tray-trayweight, #account for weight of aluminum tray sample weighed in
          dw = dw_tray-trayweight,
          comb = comb_tray-trayweight,
          perc.org = (dw-comb)/dw,
          day = 0) %>% 
   select(sampledate, day, algae, ww, dw, comb, perc.org)
-
-##NDVI 
-#these may want to be altered in the future
-NDVI1 <- read_csv("raw data/NIR_data_20Aug20.csv")
-NDVI2 <- read_csv("raw data/NIR_data_29Aug20.csv")
-
-ndvi <- NDVI1 %>% 
-  mutate(day = 14) %>% 
-  select(coreid, everything(), -file) %>% 
-  bind_rows(NDVI2 %>% 
-              mutate(day = 22) %>% 
-              select(coreid, everything(), -file))
 
 #====Metabolism Measurements====
 nep_raw <- read_csv("raw data/DO29Oct20.csv")
@@ -136,14 +94,11 @@ nep <- nep1 %>%
   arrange(startdate, coreid) %>% 
   select(coreid, startdate, day, resp, nep, gpp)
 
-# add temp (unsaved. )
-nep %>% 
-  left_join(nep1 %>% 
-              select(coreid, date, dark_light, contains("wtemp")) %>% 
-              mutate(wtemp = (wtemp_init_cor+wtemp_final)/2) %>% 
-              select(coreid, date, dark_light, wtemp) %>% 
-              spread(dark_light, wtemp) %>% 
-              rename(resp_temp = dark, nep_temp = light)) 
+#extract timing for Fig S3
+inc_timing <- nep1 %>% 
+  group_by(dark_light, date) %>% 
+  summarise(dttm_start = min(dttm_start),
+            dttm_end = max(dttm_end))
 
 
 #====Midge Measurements====
@@ -160,25 +115,7 @@ cm_raw %>%
   filter(flag!=0) %>% 
   select(coreid, sampledate, flag, comments)
 
-#find instars
-mg_instars = c(0,4.3,7.3,12, 18)/55*1000 #divide by ocular micrometer units to get mm then 1000 to get micrometers
-#Instars from Lindegaard: 75 125-140 225-250 325-350 (I'm skeptical of the veracity of the 4th instar measures)
-
-#check instars
-cm_raw %>% 
-  mutate(head_size = ifelse(scope == "Wild", head_size/55*1000, head_size/51*1000)) %>% 
-  filter(species_name == "tt") %>% 
-  ggplot(aes(head_size, fill = sampledate))+
-  geom_histogram(bins = 40)+
-  geom_vline(xintercept = mg_instars)+
-  labs(x = "Head Size \u03BCm",
-       fill = "Date",
-       y = "Count")+
-  theme_bw()+
-  theme(panel.grid = element_blank(),
-        strip.background = element_blank())
-
-
+#final cm edits
 cm <- cm_raw %>% 
         #account for differences in microscopes used
   mutate(conversion = ifelse(scope == "Wild", 55, 
@@ -200,7 +137,6 @@ cm <- cm_raw %>%
   filter(head_size>70,#first instar head size is 75. there is one individual with a lower head size that was damaged.
          species_name == "tt") %>%  # there are two non-Tanytarsus
   select(coreid, sampledate, day, species_name, head_size, body_size, instar, comments)
-
 
 #====Midge Counts====
 midge_raw <- read_csv("raw data/midge_counts29Oct20.csv")
@@ -235,6 +171,7 @@ cc <- cc %>%
 hobo_raw <- read_csv("raw data/MGhobo.csv", skip = 1) %>% 
   janitor::clean_names() 
 
+#fix column names and trim to experiment dates
 hobo <- hobo_raw %>% 
   rename(date_time = 2,
          temp = 3,
@@ -244,125 +181,11 @@ hobo <- hobo_raw %>%
   filter(date_time>as_datetime("2020-08-07 15:00:00"),
          date_time<as_datetime("2020-08-29 10:50:00"))
 
-
-hobo %>% 
-  ggplot(aes(x = date_time, y = lux))+
-  geom_line()
-
-
-
-
-hobo %>% 
-  gather(var, val, -date_time) %>% 
-  bind_cols(nep1 %>% 
-              group_by(date) %>% 
-              summarise(dttm_start = min(dttm_start),
-                        dttm_end = max(dttm_end)) %>% 
-              gather(type, time, -date) %>% 
-              mutate(incub = ifelse(date == "2020-08-18", 1, 2),
-                     type = paste0(type, incub)) %>% 
-              select(type, time) %>% 
-              spread(type, time)) %>% 
-  filter(date_time>dttm_start1&date_time<dttm_end1|
-           date_time>dttm_start2 & date_time<dttm_end2) %>%
-  mutate(group = ifelse(date_time<dttm_end1, "Day 14", "Day 22")) %>% 
-  ggplot()+
-  facet_wrap(var~group, scales = "free", strip.position = "left")+
-  geom_rect(aes(xmin = dttm_start, xmax =dttm_end, fill = dark_light, ymin = -Inf, ymax = Inf), 
-            data = nep1 %>% 
-              group_by(dark_light, date) %>% 
-              summarise(dttm_start = min(dttm_start),
-                        dttm_end = max(dttm_end)) %>% 
-              mutate(group = ifelse(date == "2020-08-18", "Day 14", "Day 22")))+
-  geom_line(aes(x = date_time, y = val))+
-  theme(strip.placement = "outside")+
-  labs(x = "Date",
-       y = NULL,
-       fill = "")
-
-
-
-
-
-hobo %>% 
-  gather(var, val, -date_time) %>%
-  mutate(var = ifelse(var == "temp", "Air Temperature (°C)",
-                      "Lux")) %>% 
-  ggplot()+
-  facet_wrap(~var, scales = "free_y", strip.position = "left", ncol = 1)+
-  geom_rect(aes(xmin = dttm_start, xmax =dttm_end, fill = dark_light, ymin = -Inf, ymax = Inf), 
-            data = nep1 %>% 
-              group_by(dark_light, date) %>% 
-              summarise(dttm_start = min(dttm_start),
-                        dttm_end = max(dttm_end)),
-            alpha = 0.8)+
-  geom_line(aes(x = date_time, y = val))+
-  theme(strip.placement = "outside",
-        legend.position = "none")+
-  labs(x = "Date",
-       y = NULL,
-       fill = "")+
-  scale_fill_viridis_d()
-
-# ggpreview(plot = last_plot(), dpi = 650, width = 120, height = 80, units = "mm")
-
-
-
+#mean and SD temperature
 hobo %>% 
   filter(date_time>as.Date("2020-08-10")) %>% 
   summarise(tempmean = mean(temp),
             tempsd = sd(temp))
-
-
-hobo %>% 
-  group_by(hour = hour(date_time)) %>% 
-  summarise(temp = mean(temp),
-            lux = mean(lux)) %>%
-  gather(var, val, -hour) %>% 
-  ggplot(aes(x = hour, y = val))+
-  facet_wrap(~var, scales = "free")+
-  geom_line()
-
-
-hobo %>% 
-  mutate(hour = hour(date_time),
-         date = as.Date(date_time)) %>% 
-  gather(var, val, -hour, -date, -date_time) %>% 
-  filter(! date %in% unique(c(as.Date(nep1$dttm_start), as.Date(nep1$dttm_end)))) %>% 
-  group_by(date, hour, var) %>% 
-  summarise(val = mean(val)) %>% 
-  mutate(var = ifelse(var == "lux", "Irradiance (Lux)", "Temperature (°C)"),
-         box = ifelse(date>="2020-08-20", "Top", "Bottom")) %>% 
-  ggplot(aes(x = hour, y = val, group = date, col = date))+
-  facet_grid(var~box, scales = "free_y", switch = "y")+
-  geom_line(alpha = 0.5, size = 0.7)+
-  scale_color_gradient2(low = "dodgerblue", high = "firebrick", trans = "date", mid = "darkorchid", midpoint = as.numeric(mean(as.Date(hobo$date_time))))+
-  labs(y = "",
-       x = "Hour",
-       color = NULL)+
-  theme(
-        strip.placement = "outside")
-ggpreview(plot = last_plot(), dpi = 650, width = 120, height = 80, units = "mm")
-
-
-hobo %>% 
-  mutate(hour = hour(date_time),
-         date = as.Date(date_time)) %>% 
-  group_by(date) %>% 
-  gather(var, val, -hour, -date, -date_time) %>% 
-  filter(! date %in% unique(c(as.Date(nep1$dttm_start), as.Date(nep1$dttm_end)))) %>% 
-  group_by(date, var) %>% 
-  summarise(max = max(val),
-            min = min(val),
-            starthr = min(hour),
-            endhr = max(hour)) %>% 
-  filter(starthr == 0, endhr == 23) %>% 
-  group_by(var) %>% 
-  summarise(day = mean(max),
-            night = mean(min),
-            sdday = sd(max),
-            sdnight = sd(min))
-  
 
 
 hobo %>% 
@@ -382,21 +205,19 @@ hobo %>%
             luxsd = sd(lux))
   
 #====Number of midges at sample site 3 August 2020====
+corearea <- 2.5^2*pi/10000 #kajak core area in m2
+
 data.frame(fract_count = rep(1/8,3), tanyt = c(20, 12, 21)) %>% 
   mutate(tanyt_tot = tanyt/fract_count) %>% 
   summarise(mean = mean(tanyt_tot)/corearea,
             sd = sd(tanyt_tot)/corearea)
   
-
-
-
 #=====Write to CSV====
-
-
+# write_csv(hobo, "clean data/MG_hobo.csv")
+# write_csv(inc_timing, "clean data/MG_inc_timing.csv")
 # write_csv(meta, "clean data/MG_meta.csv")
 # write_csv(chl, "clean data/MG_chl.csv")
 # write_csv(loi, "clean data/MG_om.csv")
-# write_csv(ndvi, "clean data/MG_ndvi.csv")
 # write_csv(nep, "clean data/MG_ep.csv")
 # write_csv(cm, "clean data/MG_cm.csv")
 # write_csv(cc, "clean data/MG_cc.csv")

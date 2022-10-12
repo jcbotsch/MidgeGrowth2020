@@ -19,7 +19,7 @@ sumna <- function(x){
   }
 }
 
-#preview
+#preview figures prior to saving
 ggpreview <- function(...) {
   fname <- tempfile(fileext = ".png")
   ggsave(filename = fname, ...)
@@ -28,6 +28,11 @@ ggpreview <- function(...) {
 }
 
 #====Experiment Analysis Functions=====
+
+#find instars
+mg_instars = c(0,4.3,7.3,12, 18)/55*1000 #divide by ocular micrometer units to get mm then 1000 to get micrometers
+#Instars from Lindegaard: 75 125-140 225-250 325-350 (I'm skeptical of the veracity of the 4th instar measures)
+
 
 #fix predicted names
 fix.names <- function(preddata){
@@ -87,9 +92,9 @@ gpp_omgm2h_to_cugcm2d <- function(x){
 }
 
 #====Model Functions====
-#function to fit dynamics
+#function to simulate dynamics
 trajectory <- function(simdat){ # a dataframe containing columns x.init, y.init,a, K, c, m, Bm, Tmax 
-  #list
+  #list to collect multiple simulations
   trajlist <- list()
   
   for(i in 1:nrow(simdat)){
@@ -99,7 +104,6 @@ trajectory <- function(simdat){ # a dataframe containing columns x.init, y.init,
     a <- simdat$a[i]
     K <- simdat$K[i]
     c <- simdat$c[i]
-    # m <- simdat$m[i]
     Tmax <- simdat$Tmax[i]
     
     out <- data.frame(paramset = i, t = 1:Tmax,x = NA, y = NA)
@@ -128,8 +132,6 @@ SSfit <- function(par, data, x.init, y.init, SS.weight, par.fixed=par.fixed, tof
   K <-  exp(par[2])
   a <-  exp(par[3])
   ac <-  exp(par[4])
-  # m <-  exp(par[5])
-  # gpp.rate <-  exp(par[6])
   gpp.rate <- exp(par[5])
   
   x <- x.init
@@ -142,7 +144,6 @@ SSfit <- function(par, data, x.init, y.init, SS.weight, par.fixed=par.fixed, tof
   for(t in 1:Tmax){
     
     x.next <- exp(r)*x^K - a*x*y
-    # y <- y + ac*x*y - m
     y <- y + ac*x*y
     x <- x.next
     
@@ -153,7 +154,6 @@ SSfit <- function(par, data, x.init, y.init, SS.weight, par.fixed=par.fixed, tof
       sampled.data <- (data$day == 14) & !is.na(data$y) & (data$midge == "Midges")
       sampled.sim <- data$coreid[sampled.data]
       dif.y <- log(y[sampled.sim]) - log(data$y[sampled.data])
-      #dif.y <- y[sampled.sim] - data$wt[sampled.data]
       SS2 <- SS2 + sum(dif.y^2)
     }
     
@@ -166,7 +166,6 @@ SSfit <- function(par, data, x.init, y.init, SS.weight, par.fixed=par.fixed, tof
       sampled.data <- (data$day == 22) & (data$midge == "Midges") & !is.na(data$y)
       sampled.sim <- data$coreid[sampled.data]
       dif.y <- log(y[sampled.sim]) - log(data$y[sampled.data])
-      #dif.y <- y[sampled.sim] - data$wt[sampled.data]
       SS2 <- SS2 + sum(dif.y^2)
     }
   }
@@ -181,14 +180,16 @@ SSfit <- function(par, data, x.init, y.init, SS.weight, par.fixed=par.fixed, tof
   }
 }
 
+#converting units from standardized model units to experimental units
 convert_to_exp_units <- function(dataframe){
   dataframe %>% 
     mutate(init.chl = (x.init)*unique(meanx0),
            gpp = (x*gpp.rate)*unique(meanx),
            wt = y*unique(meany),
+           wtc = wt*0.5*1000,
            gd = (y*meany - y.init*meany)/t,
            gdc = gd*0.5*1000,
-           gppc = x) %>% 
+           gppc = gpp_omgm2h_to_cugcm2d(gpp)) %>% 
     return()
 }
 
@@ -196,12 +197,17 @@ convert_to_exp_units <- function(dataframe){
 theme_set(theme_bw()+
             theme(panel.grid = element_blank(),
                   strip.background = element_blank(),
-                  legend.position = "bottom",
+                  legend.position = "top",
                   text = element_text(size = 10),
-                  axis.title = element_text(size = 10.5)))
+                  axis.title = element_text(size = 10.5),
+                  legend.spacing = unit(0,units = 'points'),
+                  legend.margin = margin(c(1,5,5,5)),
+                  legend.box.spacing = unit(0, units = "points")))
 
 
 midge_color <- scale_color_manual(values = c("Midges" = "black", "No Midges" = "gray60"))
 midge_fill <- scale_fill_manual(values = c("Midges" = "black", "No Midges" = "gray60"))
 midge_lines <- scale_linetype_manual(values = c("Midges" = "solid", "No Midges" = "dashed"))
+algae_color <- saturation(scale_color_viridis_c(trans = "log", breaks = c(0.01, 0.1, 1), end = 0.9), scalefac(5))
+algae_fill <-  saturation(scale_fill_viridis_c(trans = "log", breaks = c(0.01, 0.1, 1), end = 0.9), scalefac(5))
 

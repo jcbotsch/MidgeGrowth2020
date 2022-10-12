@@ -5,6 +5,7 @@ library(lme4)
 library(car)
 library(phytools)
 source("scripts/MG_Functions.R")
+library(shades)
 
 options(dplyr.summarise.inform = FALSE)
 #====read in files====
@@ -46,30 +47,6 @@ nts <- cc %>%
   group_by(algae_conc2, day) %>% 
   summarise(nt = mean(live_tt))
 
-#====Plotting boimass====
-cm %>% 
-  filter(day>0) %>% 
-  mutate(wt = weight(body_size)) %>% #mg
-  group_by(day, coreid) %>% 
-  summarise(Bt = ((sumna(wt) *0.5)/1000)/ftube_area) %>% #calculate biomass in g C
-  left_join(nep %>% 
-              mutate(gpp = gpp*((12/32)*pq))) %>%  #convert GPP from O2 to C
-  group_by(day, midge, algae_conc2) %>% 
-  arrange(algae_conc2) %>% 
-  ggplot(aes(x = Bt, y = gpp))+
-  facet_grid(midge~paste("Day",day))+
-  #rugs for initial biomass
-  geom_rug(length = unit(0.3, "lines"), y = NA, data = cm %>% 
-             filter(day == 0) %>% 
-             mutate(wt = weight(body_size)) %>% 
-             group_by(coreid) %>% 
-             summarise(Bt = sumna(wt)))+
-  geom_point(aes(fill = algae_conc2), size = 2, shape = 21)+
-  labs(x = expression("Midge Biomass g C"~m^{-2}),
-       y = expression("Primary Production mg C "~m^{-2}~d^{-1}),
-       fill = "Sediment Treatment")+
-  scale_fill_viridis_c(trans = "log", breaks = c(0.01, 0.1, 1))
-
 #=====Calculate Midge Production=====
 set.seed(12345)
 #subset starting midges and experimental midges
@@ -86,7 +63,6 @@ exp_cm <- cm %>%
 # initials for non-parametric bootstrapping
 startboot <- list()
 expboot <- list() 
-set.seed(1234)
 nboot = 1000
 
 #perform non-parametric bootstrapping
@@ -137,7 +113,7 @@ day0 <- estimated_growth %>%
   select(bootstrap, algae_conc2, contains("day0"))
 
 # calculate growth and production on the bootstraps
-production_boot2 <- estimated_growth %>% 
+production_boot <- estimated_growth %>% 
   filter(day!=0) %>% 
   mutate(wt = weight(body_size)) %>% 
   left_join(nts) %>% 
@@ -168,17 +144,13 @@ total_sp <- eb %>%
 #=====Prepare Data====
 prod_cm <- nep %>% 
   group_by(day, midge, algae_conc2) %>% 
-  #converted to function
-  # mutate(prod = (gpp*18)*(12/32*pq),#daily production of algae in g C m^2d^-1
-  #        prod = prod/10) %>% #convert mg C cm^-2d^-1 to ug C cm^-2 d^-1
   mutate(prod = gpp_omgm2h_to_cugcm2d(gpp)) %>% 
   add_count() %>% 
   summarise(n = unique(n),
-            mean_pp = mean(prod), #average GPP for a given treatment midge, day, sediment treatment combination
+            mean_pp = mean(prod), #average GPP for a given treatment midge, day for each initial algal abundance
             sd_pp = sd(prod)/sqrt(n)) %>% #calculate standard error of GPP
-  full_join(production_boot2 %>% #join with bootstrapped production data
-              # filter(Pd>0) %>% 
-              mutate(Pdc = ((Pd*0.5)/1000)/ftube_area, #production in C m^-2
+  full_join(production_boot %>% #join with bootstrapped production data
+              mutate(Pdc = ((Pd*0.5)/1000)/ftube_area, #midge production in C m^-2
                      gdc = gd*0.5*1000, #convert to ug
                      midge = "Midges") %>%  #0.5 g C/ g AFDM
               group_by(day, algae_conc2, midge) %>% 
@@ -209,34 +181,30 @@ startree <- multi2di(startree)
 #check
 plot.phylo(startree)
 
-#model
+#fit measurement model
 gmod2 <- pgls.Ives(startree, y = prod_cm$mean_pp, X = prod_cm$mean_gdc, Vy = cov.PPc, Vx = cov.MG, Cxy = cov.base)
-gmod2$beta
+gmod2$beta #slope and intercept
 
 #====Figure: Primary and Secondary Production=====
-estfit2 <- data.frame(mean_gdc = seq(min(prod_cm$mean_gdc-prod_cm$sd_gdc), max(prod_cm$mean_gdc + prod_cm$sd_gdc), by = 0.001)) %>% 
+estfit <- data.frame(mean_gdc = seq(min(prod_cm$mean_gdc-prod_cm$sd_gdc), max(prod_cm$mean_gdc + prod_cm$sd_gdc), by = 0.001)) %>% 
   mutate(mean_pp = gmod2$beta[1] + gmod2$beta[2]*mean_gdc)
 
 #plot figure
-growfig2 <- prod_cm%>% 
+growfig <- prod_cm %>% 
   mutate(day = paste("Day", day)) %>% 
   ggplot(aes(x = mean_gdc, y = mean_pp))+
-  geom_line(data = estfit2)+
-  geom_errorbar(aes(ymin = mean_pp-sd_pp, ymax = mean_pp+sd_pp), alpha = 0.5, width  = NA)+
+  geom_line(data = estfit)+
+  geom_errorbar(aes(ymin = mean_pp-sd_pp, ymax = mean_pp+sd_pp), alpha = 0.5)+
   geom_errorbar(aes(xmin = mean_gdc-sd_gdc, xmax = mean_gdc+sd_gdc), alpha = 0.5)+
-  geom_point(aes(shape = day, fill = algae_conc2), alpha = 0.75, size = 2)+
-  viridis::scale_fill_viridis(trans = "log", breaks = c(0.01, 0.1, 1))+
-  # coord_cartesian(xlim = c(0, NA))+
-  scale_y_continuous(labels = scales::comma_format())+
+  geom_point(aes(shape = day, fill = algae_conc2), alpha = 1, size = 2)+
+  algae_fill+
   scale_shape_manual(values = c(21, 22))+
   labs(y = expression("Primary Production \u03BCg C"~cm^{-2}~d^{-1}),
        x = expression("Midge Growth \u03BCg C "~ind^{-1}~d^{-1}),
-       fill = "Sediment Treatment",
-       shape = element_blank(),
-       linetype = element_blank())+
-  guides(fill = guide_colorbar(title.position = "top"))+
-  theme(legend.box = "vertical",
-        legend.spacing = unit(0,units = 'points'),
-        legend.box.spacing = unit(0, units = "points"))
+       fill = "Initial Algal Abundance",
+       shape = element_blank())+
+  guides(fill = guide_colorbar(title.position = "top", title.hjust = 0.5, barheight = 0.5, barwidth = 8))+
+  theme(legend.box = "vertical")
 
-# ggpreview(plot = growfig2, dpi = 650, width = 80, height = 100, units = "mm") 
+ggpreview(plot = growfig, dpi = 800, width = 3, height = 3.5, units = "in")
+# ggsave(plot = growfig, filename = "figures/Botsch_MidgeGrowth_fig2.pdf", dpi = 800, width = 3, height = 3.5, units = "in")
