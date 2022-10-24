@@ -261,3 +261,32 @@ arange14 <- obsmoda %>%
   guides(color = guide_colorbar(title.position = "top", title.hjust = 0.5, barheight = 0.5, barwidth = 8))+
   algae_color
 # ggpreview(plot = arange14, width = 3, height = 4, units = "in", dpi = 650)
+
+
+#====Figure S8 biomass trajectories under different per capita resource growth rates====
+rtraj <- rmod %>% 
+  #only min and max Xt=0
+  filter(x.init %in% c(min(x.init), max(x.init))) %>% 
+  mutate(algae_conc_d = ifelse(algae_conc2 == 1, "Ambient", "Low"),
+         algae_conc_d  = fct_reorder(algae_conc_d, algae_conc2)) %>% 
+  ggplot(aes(x = t, group = interaction(x.init), color = algae_conc_d))+
+  facet_wrap(~paste("r = ", rrange, "\u00D7 r"), scales = "free_y", ncol = 1)+
+  geom_line(aes(y = wtc/4, linetype = "Midge"), size = 1)+
+  geom_line(aes(y = gppc, linetype = "GPP"), size = 1)+
+  scale_y_continuous(sec.axis = sec_axis(trans = ~.*4, name = "Average Midge Mass (\u03BCg C)"))+ #add second axis for midge C
+  scale_linetype_manual(values = c("solid", "dashed"))+
+  scale_alpha_manual(values = c(0.25, 0.75), guide = "none")+
+  scale_shape_manual(values = c(16,21))+
+  saturation(scale_color_viridis_d(end = 0.9), scalefac(5))+
+  guides(linetype = guide_legend(order = 1), color =  guide_legend(title.position = "top", order = 2))+
+  labs(linetype = element_blank(),
+       color = "Initial Algal Abundance",
+       x = "Day",
+       y = expression("Primary Production \u03BCg C "~cm^{-2}~d^{-1}))+
+  theme(strip.placement = "outside",
+        legend.key.width = unit(2, "lines"),
+        legend.key.height = unit(0.1, "lines"),
+        legend.spacing.y = unit(0.5, "lines"),
+        legend.box = "vertical")
+
+# ggpreview(plot = rtraj, width = 3, height = 4, units = "in", dpi = 800)

@@ -176,7 +176,7 @@ arange <- obsmoda %>%
 # ggpreview(plot = arange, width = 3, height = 3.5, units = "in", dpi = 800)
 # ggsave(plot = arange, filename = "figures/Botsch_MidgeGrowth_fig3.pdf", device = "pdf", width = 3, height = 3.5, units = "in", dpi = 800)
 
-#====Figure 4Aa midge growth and pp under different attack rates====
+#====Figure 5a midge growth and pp under different attack rates====
 plota <- obsmoda %>% 
   #extract only estimated a, high a (0.25)
   filter(t %in% c(Tmax),
@@ -205,7 +205,7 @@ plota <- obsmoda %>%
   scale_x_continuous(n.breaks= 4)+
   scale_y_continuous(n.breaks = 5)
 
-#====Figure 4Ba biomass trajectories under different attack rates====
+#====Figure 4 biomass trajectories under different attack rates====
 atraj <-obsmoda %>% 
   #extract only the estimated and high attack rates, with midges and the highest Xt=0
   filter(y.init>0,
@@ -222,21 +222,31 @@ atraj <-obsmoda %>%
   mutate(al = ifelse(a == aest, 
                      "a == a[est]", 
                      ifelse(a == 0.25, paste("a==", a), "a == a[opt]")),
-         al = fct_reorder(al, a)) %>% 
+         al = fct_reorder(al, a),
+         algae_conc_d = ifelse(algae_conc2 == 1, "Ambient", "Low"),
+         algae_conc_d  = fct_reorder(algae_conc_d, algae_conc2)) %>% 
   #plot
-  ggplot(aes(x = t, y = val, linetype = var, group = interaction(x.init), shape = midge, col = x.init))+
+  ggplot(aes(x = t, y = val, linetype = var, group = interaction(x.init), shape = midge, col = algae_conc_d))+
   facet_wrap(~al, labeller = label_parsed, ncol = 1)+
   geom_line(aes(y = wtc/4, linetype = "Midge"), size = 1)+ #midge weight
   geom_line(aes(y = gppc, linetype = "GPP"), size = 1)+ #algal production
   scale_linetype_manual(values = c("solid", "dashed"))+
   scale_y_continuous(sec.axis = sec_axis(trans = ~.*4, name = "Average Midge Mass (\u03BCg C)"))+ #add second axis for midge C
-  algae_color+
-  guides(color = "none")+
+  saturation(scale_color_viridis_d(end = 0.9), scalefac(5))+
+  guides(linetype = guide_legend(order = 1), color =  guide_legend(title.position = "top", order = 2))+
   labs(linetype = element_blank(),
+       color = "Initial Algal Abundance",
        x = "Day",
        y = expression("Primary Production \u03BCg C "~cm^{-2}~d^{-1}))+
   theme(strip.placement = "outside",
-        legend.key.width = unit(2, "lines"))
+        legend.key.width = unit(2, "lines"),
+        legend.key.height = unit(0.1, "lines"),
+        legend.spacing.y = unit(0.5, "lines"),
+        legend.box = "vertical")
+
+ggpreview(plot = atraj, width = 3, height = 5, units = "in", dpi = 800)
+ggsave(plot = atraj, filename = "figures/Botsch_MidgeGrowth_fig4.pdf", device = "pdf", width = 3, height = 5, units = "in", dpi = 800)
+
 
 #====Simulate Varying Resource Growth Rates====
 #set ranges 
@@ -259,7 +269,7 @@ rmod <- trajectory(simr) %>%
   left_join(init.data %>% rename(x.init = x0, y.init = y0)) %>% 
   convert_to_exp_units()
 
-#====Figure 4Ab midge growth and pp under different per capita resource growth rates====
+#====Figure 5b midge growth and pp under different per capita resource growth rates====
 plotr <- rmod %>% 
   filter(t%in% c(Tmax)) %>% #get t = 22
   ggplot(aes(y = gppc, x = gdc, fill = algae_conc2))+
@@ -276,30 +286,10 @@ plotr <- rmod %>%
   scale_y_continuous(n.breaks = 5)
 
 
-#====Figure 4Ba biomass trajectories under different per capita resource growth rates====
-rtraj <- rmod %>% 
-  #only min and max Xt=0
-  filter(x.init %in% c(min(x.init), max(x.init))) %>% 
-  ggplot(aes(x = t, group = interaction(x.init), color = algae_conc2))+
-  facet_wrap(~paste("r = ", rrange, "\u00D7 r"), scales = "free_y", ncol = 1)+
-    geom_line(aes(y = wtc/4, linetype = "Midge"), size = 1)+
-  geom_line(aes(y = gppc, linetype = "GPP"), size = 1)+
-  scale_linetype_manual(values = c("solid", "dashed"))+
-  scale_alpha_manual(values = c(0.25, 0.75), guide = "none")+
-  scale_shape_manual(values = c(16,21))+
-  algae_color+
-  guides(color = "none")+
-  scale_y_continuous(sec.axis = sec_axis(trans = ~.*4, name = "Average Midge Mass (\u03BCg C)"))+
-  labs(linetype = element_blank(),
-       x = "Day",
-       y = expression("GPP \u03BCg C"~cm^{-2}~d^{-1}))+
-  theme(strip.placement = "outside",
-        legend.key.width = unit(2, "lines"))
-
 #====Combine panels for Figure 4====
 #4A
-zplot <- plot_grid( plota +theme(axis.title = element_blank(), legend.position = "none"),
-                    plotr + theme(axis.title = element_blank(), legend.position = "none"), 
+zplot <- plot_grid( plota +theme(axis.title = element_blank(), legend.position = "none", plot.margin = margin(5,7,5,5)),
+                    plotr + theme(axis.title = element_blank(), legend.position = "none", plot.margin = margin(5,7,5,5)), 
                     nrow = 1,
                     align = "h")
 
@@ -312,21 +302,7 @@ x.grob <- textGrob(expression("Midge Growth \u03BCg C "~ind^{-1}~d^{-1}), gp = g
 #finished 4A
 comb <- grid.arrange(plotfin, left = y.grob, bottom = x.grob)
 
-#4B
-tplot <- plot_grid(atraj + theme(axis.title.x = element_blank(), axis.title.y.right = element_blank(), legend.position = "none"),
-          rtraj + theme(axis.title.x = element_blank(), axis.title.y.left = element_blank(), legend.position = "none"), align = "h")
-leg2 <- get_legend(atraj) #extract legend for 4B
-
-#add axis labels
-x.grob2 <- textGrob("Day", gp = gpar(fontsize = 11))
-plott <- plot_grid(leg2, tplot, ncol = 1, rel_heights = c(0.15, 0.85))
-#finished 4B
-combt <- grid.arrange(plott, bottom = x.grob2)
-
-#combine 4A and 4B
-combf <- plot_grid(comb, combt, rel_widths = c(1, 1.2), labels = c("A", "B"), align = "h")
 
 #preview and save
-# ggpreview(plot = combf, width = 6, height = 4, units = "in", dpi = 800)
-# ggsave(plot = combf, filename = "figures/Botsch_MidgeGrowth_fig4.pdf",  device = "pdf",
-#        width = 6.5, height = 4, units = "in", dpi = 800)
+ggpreview(plot = comb, width = 3, height = 4, units = "in", dpi = 800)
+ggsave(plot = comb, filename = "figures/Botsch_MidgeGrowth_fig5.pdf",  device = "pdf", width = 3, height = 4, units = "in", dpi = 800)
