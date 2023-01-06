@@ -80,8 +80,7 @@ sb <- bind_rows(startboot)
 for(i in 1:nboot){
   expboot[[i]] <- exp_cm %>% 
     group_by(day, algae_conc2) %>% 
-    add_count() %>% 
-    sample_n(size = n, replace = TRUE) %>% 
+    slice_sample(prop = 1, replace = TRUE) %>% 
     summarise(body_size = mean(body_size)) %>%  
     mutate(bootstrap = i) 
 }
@@ -206,5 +205,45 @@ growfig <- prod_cm %>%
   guides(fill = guide_colorbar(title.position = "top", title.hjust = 0.5, barheight = 0.5, barwidth = 8))+
   theme(legend.box = "vertical")
 
-ggpreview(plot = growfig, dpi = 800, width = 3, height = 3.5, units = "in")
-# ggsave(plot = growfig, filename = "figures/Botsch_MidgeGrowth_fig2.pdf", dpi = 800, width = 3, height = 3.5, units = "in")
+
+ggpreview(plot = growfig, dpi = 300, width = 945, height = 1102, units = "px")
+ggsave(plot = growfig, filename = "figures/Botsch_MidgeGrowth_fig2.pdf", dpi = 300, width = 945, height = 1102, units = "px")
+
+
+growfig_pres <- prod_cm %>% 
+  mutate(day = paste("Day", day)) %>% 
+  ggplot(aes(x = mean_gdc, y = mean_pp))+
+  geom_line(data = estfit)+
+  geom_errorbar(aes(ymin = mean_pp-sd_pp, ymax = mean_pp+sd_pp), alpha = 0.5)+
+  geom_errorbar(aes(xmin = mean_gdc-sd_gdc, xmax = mean_gdc+sd_gdc), alpha = 0.5)+
+  geom_point(aes(shape = day, fill = algae_conc2), alpha = 1, size = 2)+
+  algae_fill+
+  scale_shape_manual(values = c(21, 22))+
+  labs(y = expression("Primary Production \u03BCg C"~cm^{-2}~d^{-1}),
+       x = expression("Midge Growth \u03BCg C "~ind^{-1}~d^{-1}),
+       fill = "Initial Algal Abundance",
+       shape = element_blank())+
+  theme(legend.position = "right")
+
+prod_cm %>% 
+  mutate(day = paste("Day", day)) %>% 
+  ggplot(aes(x = mean_gdc, y = mean_pp))+
+  geom_line(color = "white", data = estfit)+
+  geom_errorbar(aes(ymin = mean_pp-sd_pp, ymax = mean_pp+sd_pp), color = "white", alpha = 0.5)+
+  geom_errorbar(aes(xmin = mean_gdc-sd_gdc, xmax = mean_gdc+sd_gdc), color = "white",  alpha = 0.5)+
+  geom_point(aes(shape = day, fill = algae_conc2), color = "white", alpha = 1, size = 2)+
+  algae_fill+
+  scale_shape_manual(values = c(21, 22))+
+  labs(y = expression("Primary Production \u03BCg C"~cm^{-2}~d^{-1}),
+       x = expression("Midge Growth \u03BCg C "~ind^{-1}~d^{-1}),
+       fill = "Initial Algal Abundance",
+       shape = element_blank())+
+  theme_black()+
+  guides(fill = guide_colorbar(title.position = "top", title.hjust = 0.5, barheight = 0.5, barwidth = 8))+
+  theme(legend.box = "vertical",
+        legend.key = element_rect(color = "black"),
+        legend.key.size = unit(0.01, "lines"),
+        legend.spacing = unit(0.01, "lines"))
+
+ggpreview(plot = growfig_pres, dpi = 600, width = 5, height = 4, units = "in")
+  

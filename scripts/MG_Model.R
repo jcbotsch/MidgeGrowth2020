@@ -173,8 +173,110 @@ arange <- obsmoda %>%
   guides(color = guide_colorbar(title.position = "top", title.hjust = 0.5, barheight = 0.5, barwidth = 8))+
   algae_color
 
-# ggpreview(plot = arange, width = 3, height = 3.5, units = "in", dpi = 800)
-# ggsave(plot = arange, filename = "figures/Botsch_MidgeGrowth_fig3.pdf", device = "pdf", width = 3, height = 3.5, units = "in", dpi = 800)
+ggpreview(plot = arange, width = 945, height = 1102, units = "px", dpi = 300)
+ggsave(plot = arange, filename = "figures/Botsch_MidgeGrowth_fig3.pdf", device = "pdf", width = 945, height = 1102, units = "px", dpi = 300)
+
+arange_pres <- arange+geom_vline(xintercept = aest, color = "white")+theme_black()
+ggpreview(plot = arange_pres, width = 945, height = 1102, units = "px", dpi = 300)
+
+
+arange_pres <- obsmoda %>% 
+  filter(t == Tmax,
+         y.init>0) %>% 
+  ggplot(aes(x = a, fill = algae_conc2, group = x.init))+
+  geom_vline(xintercept = aest)+
+  geom_line(aes(y = gdc, color = algae_conc2), size = 1)+
+  geom_rug(aes(color = algae_conc2), size = 0.8, data = optims %>% left_join(obsmoda %>% select(x.init, algae_conc2) %>% unique()))+
+  # geom_rug(x = aest, size = 1)+
+  geom_vline(xintercept = aest, size = 0.8)+
+  geom_rug(x = 0.25, size = 0.8)+
+  labs(x = "Consumption Rate",
+       y = expression("Midge Growth \u03BCg C "~ind^{-1}~d^{-1}),
+       color = "Initial Algal Abundance")+
+  guides(color = guide_colorbar(title.position = "top", title.hjust = 0.5, barheight = 0.5, barwidth = 8))+
+  algae_color
+
+
+obsmoda %>% 
+  filter(t == Tmax,
+         x.init == max(x.init),
+         y.init>0) %>% 
+  ggplot(aes(x = a, y = gdc))+
+  # geom_vline(xintercept = aest)+
+  geom_line(size = 1)+
+  labs(x = "Consumption Rate",
+       y = "Consumer Growth Rate")+
+  theme(axis.text = element_blank(),
+        axis.ticks = element_blank())
+ggpreview(plot = last_plot(), width = 945, height = 945, units = "px", dpi = 300)
+
+
+#parameters to simulate
+presa <- data.frame( a = c(seq(0, 0.4, by = 0.001), a),
+                    K = 0.9,
+                    r = 0.5,
+                    c = 0.03/0.2,
+                    Tmax = 22) %>% 
+  crossing(x.init = max(data$x0)) %>% 
+  crossing(y.init = max(data$y0)) %>% 
+  mutate(paramset = 1:n())
+
+#simulate
+pres_a <- trajectory(presa) %>% 
+  left_join(presa) %>% 
+  left_join(init.data %>% 
+              select(-coreid) %>% 
+              unique() %>% 
+              rename(x.init = x0, y.init=y0) %>% 
+              mutate(midge = ifelse(y.init>0, "Midges", "No Midges"))) %>% 
+  convert_to_exp_units()
+
+pa <- pres_a %>% filter(t == Tmax, y == max(y)) %>% pull(a)
+
+
+aselect <- data.frame(a = c(0.015, pa, 0.25), v = 1:3)
+
+plot1 <- pres_a %>% 
+  filter(t == Tmax) %>% 
+  ggplot(aes(x = a, y = gdc))+
+  geom_line(size = 1)+
+  geom_point(size = 4, data = . %>% filter(a %in% aselect$a))+
+  geom_text(aes(label = v), hjust = -1, vjust = -0.25, size = 4, data = . %>% inner_join(aselect))+
+  labs(x = "Consumption Rate",
+       y = "Consumer Growth Rate")+
+  theme(axis.text = element_blank(),
+        axis.ticks = element_blank())
+  
+
+
+plot2 <- pres_a %>% 
+  inner_join(aselect) %>% 
+  mutate(y = y/max(y),
+         x = x/max(x)) %>% 
+  ggplot(aes(x = t))+
+  geom_line(aes(y = y, color = "Consumer"), size = 1)+
+  geom_line(aes(y = x, color = "Resource"), linetype = "dashed", size = 1)+
+  scale_color_manual(values = c("red", "blue"))+
+  geom_text(aes(label = v, x = 2, y = 0.9))+
+  facet_wrap(~v, ncol = 1)+
+  labs(linetype = element_blank(),
+       color = element_blank(),
+       x = "Time",
+       y = "Biomass")+
+  theme(strip.placement = "outside",
+        # legend.key.width = unit(0, "lines"),
+        # legend.key.height = unit(0.1, "lines"),
+        # legend.spacing.y = unit(0.5, "lines"),
+        # legend.box = "vertical",
+        legend.position = "right",
+        strip.text = element_blank(),
+        axis.ticks = element_blank(),
+        axis.text.x = element_blank(),
+        axis.text.y = element_blank())
+
+plot_grid(plot1, plot2, rel_widths = c(1.2,1))
+
+ggpreview(plot = last_plot(), dpi = 650, width = 7, height = 4)
 
 #====Figure 5a midge growth and pp under different attack rates====
 plota <- obsmoda %>% 
@@ -203,7 +305,12 @@ plota <- obsmoda %>%
   guides(fill = guide_colorbar(title.position = "top", title.hjust = 0.5, barheight = 0.5, barwidth = 8))+
   algae_fill+
   scale_x_continuous(n.breaks= 4)+
-  scale_y_continuous(n.breaks = 5)
+  scale_y_continuous(n.breaks = 5)+
+  theme(legend.position = "none")
+
+
+ggpreview(plot = plota, width = 945, height = 1102, units = "px", dpi = 300)
+
 
 #====Figure 4 biomass trajectories under different attack rates====
 atraj <-obsmoda %>% 
@@ -244,9 +351,149 @@ atraj <-obsmoda %>%
         legend.spacing.y = unit(0.5, "lines"),
         legend.box = "vertical")
 
-ggpreview(plot = atraj, width = 3, height = 5, units = "in", dpi = 800)
+ggpreview(plot = atraj, width = 945, height = 1575, units = "px", dpi = 300)
 ggsave(plot = atraj, filename = "figures/Botsch_MidgeGrowth_fig4.pdf", device = "pdf", width = 3, height = 5, units = "in", dpi = 800)
 
+
+atraj + guides(linetype = guide_legend(override.aes = list(color = "white"))) +theme_black() + theme(legend.box = "vertical")
+ggpreview(plot = last_plot(), width = 945, height = 1575, units = "px", dpi = 300)
+
+#examples
+obsmoda %>% 
+  #extract only the estimated and high attack rates, with midges and the highest Xt=0
+  filter(y.init>0,
+         a %in% c(aest, 0.25),
+         x.init %in% c(min(x.init), max(x.init))) %>% 
+  #add optimum
+  bind_rows(obsmoda %>% 
+              filter(y.init != 0, 
+                     x.init %in% c(min(x.init), max(x.init))) %>% 
+              right_join(optims %>% 
+                           ungroup %>% 
+                           filter(x.init %in% c(min(x.init), max(x.init))))) %>%
+  #add label information
+  mutate(al = ifelse(a == aest, 
+                     "Below", 
+                     ifelse(a == 0.25, "Above", "Optimum")),
+         al = fct_reorder(al, a),
+         algae_conc_d = ifelse(algae_conc2 == 1, "High Initial Algal Abundance", "Low Initial Algal Abundance"),
+         algae_conc_d  = fct_reorder(algae_conc_d, algae_conc2)) %>% 
+  #plot
+  ggplot(aes(x = t, y = val, linetype = var, group = interaction(x.init), shape = midge, col = algae_conc_d))+
+  facet_grid(al~algae_conc_d, switch = "y")+
+  geom_line(aes(y = wtc/4, linetype = "Midge", color = "Midge"), size = 1)+ #midge weight
+  geom_line(aes(y = gppc, linetype = "GPP", color = "GPP"), size = 1)+ #algal production
+  scale_linetype_manual(values = c("dashed", "solid"))+
+  scale_y_continuous(sec.axis = sec_axis(trans = ~.*4, name = "Average Midge Mass (\u03BCg C)"))+ #add second axis for midge C
+  scale_color_manual(values = c("blue", "red"))+
+  # guides(linetype = guide_legend(order = 1), color =  guide_legend(title.position = "top", order = 2))+
+  labs(linetype = element_blank(),
+       color = element_blank(),
+       x = "Day",
+       y = expression("Primary Production \u03BCg C "~cm^{-2}~d^{-1}))+
+  theme(strip.placement = "outside",
+        legend.key.width = unit(2, "lines"),
+        legend.key.height = unit(0.1, "lines"),
+        legend.spacing.y = unit(0.5, "lines"),
+        legend.box = "vertical",
+        legend.position = "none",
+        axis.title.y.right = element_text(color  = "red"),
+        axis.text.y.right = element_text(color = "red"),
+        axis.title.y.left = element_text(color  = "blue"),
+        axis.text.y.left = element_text(color = "blue"))
+  
+obsmoda %>% 
+  #extract only the estimated and high attack rates, with midges and the highest Xt=0
+  filter(y.init>0,
+         a %in% c(aest, 0.25),
+         x.init %in% c(max(x.init))) %>% 
+  #add optimum
+  bind_rows(obsmoda %>% 
+              filter(y.init != 0, 
+                     x.init %in% c(max(x.init))) %>% 
+              right_join(optims %>% 
+                           ungroup %>% 
+                           filter(x.init %in% c(min(x.init), max(x.init))))) %>%
+  #add label information
+  mutate(al = ifelse(a == aest, 
+                     "Below", 
+                     ifelse(a == 0.25, "Above", "Optimum")),
+         al = fct_reorder(al, a),
+         algae_conc_d = ifelse(algae_conc2 == 1, "High Initial Algal Abundance", "Low Initial Algal Abundance"),
+         algae_conc_d  = fct_reorder(algae_conc_d, algae_conc2)) %>% 
+  filter(!is.na(algae_conc_d)) %>% 
+  #plot
+  ggplot(aes(x = t, y = val, linetype = var, group = interaction(x.init), shape = midge, col = algae_conc_d))+
+  facet_grid(al~algae_conc_d, switch = "y")+
+  geom_line(aes(y = wtc/4, linetype = "Midge", color = "Midge"), size = 1)+ #midge weight
+  geom_line(aes(y = gppc, linetype = "GPP", color = "GPP"), size = 1)+ #algal production
+  scale_linetype_manual(values = c("dashed", "solid"))+
+  scale_y_continuous(sec.axis = sec_axis(trans = ~.*4, name = "Average Midge Mass (\u03BCg C)"))+ #add second axis for midge C
+  scale_color_manual(values = c("blue", "red"))+
+  # guides(linetype = guide_legend(order = 1), color =  guide_legend(title.position = "top", order = 2))+
+  labs(linetype = element_blank(),
+       color = element_blank(),
+       x = "Day",
+       y = expression("Primary Production \u03BCg C "~cm^{-2}~d^{-1}))+
+  theme(strip.placement = "outside",
+        legend.key.width = unit(2, "lines"),
+        legend.key.height = unit(0.1, "lines"),
+        legend.spacing.y = unit(0.5, "lines"),
+        legend.box = "vertical",
+        legend.position = "none",
+        axis.title.y.right = element_text(color  = "red"),
+        axis.text.y.right = element_text(color = "red"),
+        axis.title.y.left = element_text(color  = "blue"),
+        axis.text.y.left = element_text(color = "blue"))
+
+ggpreview(plot = last_plot(), width = 2.75, height = 4, units = "in", dpi = 600)
+slowgrowth<- data.frame(t = unique(obsmoda$t)) %>% 
+  mutate(y = max(obsmoda$y.init) + 0.005*t)
+
+obsmoda %>% 
+  filter(x.init == max(x.init),
+         a == max(a),
+         midge == "Midges") %>% 
+  ggplot(aes(x = t))+
+  geom_line(aes(y = y, color = "Resource"), size = 1)+ #midge weight
+  geom_line(aes(y = y, color = "Consumer"), size = 1, data = slowgrowth)+ #algal production
+  scale_linetype_manual(values = c("solid", "dashed"))+
+  scale_color_manual(values = c("red", "blue"))+
+  guides(linetype = guide_legend(order = 1), color =  guide_legend(title.position = "top", order = 2))+
+  labs(linetype = element_blank(),
+       color = element_blank(),
+       x = "Time",
+       y = "Biomass")+
+  # theme_black()+
+  theme(strip.placement = "outside",
+        legend.key.width = unit(2, "lines"),
+        legend.key.height = unit(0.1, "lines"),
+        legend.spacing.y = unit(0.5, "lines"),
+        legend.box = "vertical",
+        axis.text.x = element_blank(),
+        axis.text.y = element_blank())
+
+
+presa <- data.frame( a = c(seq(0, 0.4, by = 0.001), a),
+            K = K,
+            r = r,
+            c = c,
+            Tmax = 22) %>% 
+  crossing(x.init = unique(data$x0)) %>% 
+  crossing(y.init = unique(data$y0)) %>% 
+  mutate(paramset = 1:n()) %>% 
+  filter(x.init == max(x.init),
+         y.init == max(y.init))
+
+#simulate
+pres_a <- trajectory(presa) %>% 
+  left_join(presa) %>% 
+  left_join(init.data %>% 
+              select(-coreid) %>% 
+              unique() %>% 
+              rename(x.init = x0, y.init=y0) %>% 
+              mutate(midge = ifelse(y.init>0, "Midges", "No Midges"))) %>% 
+  convert_to_exp_units()
 
 #====Simulate Varying Resource Growth Rates====
 #set ranges 
@@ -286,6 +533,22 @@ plotr <- rmod %>%
   scale_y_continuous(n.breaks = 5)
 
 
+rmod %>% 
+  filter(t%in% c(Tmax)) %>% #get t = 22
+  ggplot(aes(y = gppc, x = gdc, fill = algae_conc2))+
+  facet_wrap(~paste("r = ", rrange, "\u00D7 r"), scales = "free", ncol = 1)+
+  geom_path(aes(group  = t), color = "white")+
+  labs(y = expression("Primary Production \u03BCg C"~cm^{-2}~d^{-1}),
+       x = expression("Midge Growth \u03BCg C "~ind^{-1}~d^{-1}),
+       fill = "Initial Algal Abundance",
+       shape = element_blank())+
+  guides(fill = guide_colorbar(title.position = "top", title.hjust = 0.5, barheight = 0.5, barwidth = 8))+
+  geom_point(shape = 22, size = 2, color = "white")+
+  algae_fill+
+  scale_x_continuous(n.breaks= 4)+
+  scale_y_continuous(n.breaks = 5)+
+  theme_black()
+
 #====Combine panels for Figure 4====
 #4A
 zplot <- plot_grid( plota +theme(axis.title = element_blank(), legend.position = "none", plot.margin = margin(5,7,5,5)),
@@ -304,5 +567,5 @@ comb <- grid.arrange(plotfin, left = y.grob, bottom = x.grob)
 
 
 #preview and save
-ggpreview(plot = comb, width = 3, height = 4, units = "in", dpi = 800)
+ggpreview(plot = comb, width = 945, height = 1260, units = "px", dpi = 300)
 ggsave(plot = comb, filename = "figures/Botsch_MidgeGrowth_fig5.pdf",  device = "pdf", width = 3, height = 4, units = "in", dpi = 800)

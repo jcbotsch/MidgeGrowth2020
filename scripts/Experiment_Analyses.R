@@ -87,6 +87,46 @@ nepfig2 <- nep %>%
   scale_x_continuous(trans = "log", breaks = c(0.01, 0.1, 1))+
   theme(legend.position = "none")
 
+nepfig3 <- nep %>% 
+  mutate(day = paste("Day", day)) %>% 
+  ggplot(aes(x = algae_conc2, y = gpp, fill = midge))+
+  facet_wrap(~day, ncol = 2)+
+  geom_ribbon(aes(ymin = lower, ymax = upper, fill = midge, linetype = midge), color = "black", size = 0.2, alpha = 0.5, data = gpredict, show.legend = FALSE)+
+  geom_point(size  = 3, alpha = 0.8, shape = 21, position = position_jitterdodge(dodge.width = 0.3, jitter.width = 0.1, jitter.height = 0))+
+  geom_line(aes(linetype = midge), size = 0.7, data = gpredict)+
+  midge_color+
+  midge_fill+ 
+  midge_lines+
+  labs(x = "Initial Algal Abundance",
+       y = expression("GPP "~(mg~O[2]~m^{-2}~hr^{-1})),
+       color = "",
+       fill = "",
+       linetype = "")+
+  scale_x_continuous(trans = "log", breaks = c(0.01, 0.1, 1))+
+  theme(legend.position = "right")
+
+nep %>% 
+  mutate(day = paste("Day", day)) %>% 
+  ggplot(aes(x = algae_conc2, y = gpp, fill = midge))+
+  facet_wrap(~day, ncol = 2)+
+  geom_ribbon(aes(ymin = lower, ymax = upper, linetype = midge, color = midge, fill = midge), 
+              color = "white", size = 0.2, alpha = 0.5, data = gpredict, show.legend = FALSE)+
+  geom_point(size  = 2, shape = 21, color = "white", position = position_jitterdodge(dodge.width = 0.3, jitter.width = 0.1, jitter.height = 0))+
+  geom_line(aes(linetype = midge), color = "white", size = 0.7, data = gpredict)+
+  midge_color_dark+
+  midge_fill_dark+ 
+  midge_lines+
+  labs(x = "Initial Algal Abundance",
+       y = expression("GPP "~(mg~O[2]~m^{-2}~hr^{-1})),
+       color = "",
+       fill = "",
+       linetype = "")+
+  lims(y = c(0, NA))+
+  scale_x_continuous(trans = "log", breaks = c(0.01, 0.1, 1))+
+  theme_black()
+
+ggpreview(plot = nepfig3, width = 5.5, height = 3, units = "in", dpi = 600)
+
 #====Question 2: Sediment Effects on Midges =====
 ##====Q2.1: Number of Midges Present====
 #prep data
@@ -243,6 +283,58 @@ blfig2 <- cm %>%
   scale_x_continuous(trans = "log", breaks = c(0.01, 0.1, 1))+
   theme(legend.position = "none")
 
+
+cm %>% 
+  filter(day %in% c(14, 22),
+         !is.na(body_size),
+         midge == "Midges") %>% 
+  mutate(day = paste("Day", day)) %>% 
+  ggplot(aes(x = algae_conc2, y = body_size))+
+  facet_wrap(~day, ncol = 2)+
+  geom_hline(yintercept = start_length, linetype = 2, size = 1, alpha = 1)+
+  geom_ribbon(aes(ymin = lower, ymax = upper, fill = midge, linetype = midge), color = "black", size = 0.2, alpha = 0.5, data = blpredict %>% filter(midge == "Midges"), show.legend = FALSE)+
+  geom_point(size  = 2.5, alpha = 0.6, shape = 16, stroke = 0.2, position = position_jitter(width = 0.2, height = 0))+
+  geom_line(aes(linetype = midge), size = 0.7, data = blpredict)+
+  midge_color+
+  midge_fill+ 
+  midge_lines+
+  labs(y = "Body Length (mm)",
+       x = "Initial Algal Abundance",
+       color = "",
+       fill = "",
+       linetype = "")+
+  scale_x_continuous(trans = "log", breaks = c(0.01, 0.1, 1))+
+  theme(legend.position = "none")
+
+
+
+cm %>% 
+  filter(day %in% c(14, 22),
+         !is.na(body_size),
+         midge == "Midges") %>% 
+  mutate(day = paste("Day", day)) %>% 
+  ggplot(aes(x = algae_conc2, y = body_size))+
+  facet_wrap(~day, ncol = 2)+
+  geom_hline(yintercept = start_length, linetype = 2, size = 0.5, color = "white")+
+  geom_ribbon(aes(ymin = lower, ymax = upper, linetype = midge), fill = "white", color = "white", size = 0.2, alpha = 0.5, data = blpredict %>% filter(midge == "Midges"), show.legend = FALSE)+
+  geom_point( fill = "white", size  = 2, alpha = 0.8, shape = 21, stroke = 0.2, position = position_jitter(width = 0.2, height = 0))+
+  geom_line(color = "white", size = 0.7, data = blpredict %>% filter(midge == "Midges"))+
+  midge_color_dark+
+  midge_fill_dark+ 
+  midge_lines+
+  labs(y = "Body Length (mm)",
+       x = "Initial Algal Abundance",
+       color = "",
+       fill = "",
+       linetype = "")+
+  scale_x_continuous(trans = "log", breaks = c(0.01, 0.1, 1))+
+  theme_black()
+
+ggpreview(plot = last_plot(), width = 6, height = 3.5, units = "in", dpi = 300)
+
+
+
+
 #====Combine Figure 1====
 figcomb <- plot_grid(nepfig2 + theme(axis.title.x = element_blank()), 
                      nm_fig2+ theme(axis.title.x = element_blank()), 
@@ -258,8 +350,8 @@ x.grob <- textGrob("Initial Algal Abundance", gp = gpar(fontsize = 11))
 
 figcomb3 <- grid.arrange(figcomb2, bottom = x.grob)
 
-ggpreview(figcomb3, width = 5, height = 6, units = "in", dpi = 800)
-# ggsave(figcomb3, filename = "figures/Botsch_MidgeGrowth_fig1.pdf", device = "pdf", width = 5, height = 6, units = "in", dpi = 800)
+ggpreview(figcomb3, width = 1476, height = 1771, units = "px", dpi = 300)
+ggsave(figcomb3, filename = "figures/Botsch_MidgeGrowth_fig1.pdf", device = "pdf", width = 1476, height = 1771, units = "px", dpi = 300)
 
 
 
