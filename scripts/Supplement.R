@@ -18,6 +18,9 @@ om <- read_csv("clean data/MG_om.csv")
 hobo <- read_csv("clean data/MG_hobo.csv")
 inc_timing <- read_csv("clean data/MG_inc_timing.csv")
 cm_raw <- read_csv("clean data/MG_cm.csv")
+ndvi <- read_csv("clean data/MG_ndvi.csv")
+ep_raw <- read_csv("clean data/MG_ep.csv")
+
 ltreb <- read_csv("clean data/ltreb_measurements.csv") # https://doi.org/10.6084/m9.figshare.14095697.v3
 
 #====create data frame to predict model response variables ====
@@ -31,6 +34,49 @@ mm <- model.matrix(~log(algae_conc2)*midge + box, topredict)
 mm[,"box2"] <- 0.5
 mm <- unique(mm)
 
+#====ENDVI=====
+
+nep <- ep_raw %>% 
+  left_join(meta) %>% 
+  mutate(coreid = as.character(coreid),
+         box = as.character(box),
+         gpp = gpp*1000) #convert GPP from gm-2h-1 to gcm-2h-1
+
+
+ndvi <- ndvi %>% 
+  mutate(coreid = as.character(coreid)) %>% 
+  left_join(nep)
+
+ndvi14 <- ndvi %>% filter(day == 14)
+
+ndvilm14 <- lm(ENDVI~gpp, data = ndvi14)
+summary(ndvilm14)
+
+dat14 <- data.frame(day = "Day 14", gpp = 0:max(ndvi14$gpp))
+dat14$ENDVI <- predict(ndvilm14, dat14)
+dat14$se <- predict(ndvilm14, dat14, se = TRUE)$se
+
+ndvi22 <- ndvi %>% filter(day == 22)
+
+ndvilm22 <- lm(ENDVI~gpp, data = ndvi22)
+summary(ndvilm22)
+
+dat22 <- data.frame(day = "Day 22", gpp = 0:max(ndvi22$gpp))
+dat22$ENDVI <- predict(ndvilm22, dat22)
+dat22$se <- predict(ndvilm22, dat22, se = TRUE)$se
+
+pred <- bind_rows(dat14, dat22)
+
+ndvi %>% 
+  filter(day == 22) %>% 
+  mutate(day = paste("Day", day)) %>% 
+  ggplot(aes(x = gpp, y = ENDVI))+
+  geom_point()+
+  geom_ribbon(aes(ymin = ENDVI - se, ymax = ENDVI+se), alpha = 0.2, data = dat22)+
+  geom_line(data = dat22)+
+  labs(x = expression("GPP "~(mg~O[2]~m^{-2}~hr^{-1})))
+
+ggpreview(plot = last_plot(), width = 2.5, height = 2.5)
 
 #====Figure S2====
 #plot organic content

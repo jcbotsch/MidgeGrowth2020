@@ -12,7 +12,7 @@ source("scripts/MG_Functions.R")
 #====read in files====
 meta <- read_csv("clean data/MG_meta.csv") %>% 
   mutate(algae_conc2 = ifelse(algae_conc == 0, 2e-3, algae_conc)) #half of lowest value
-ndvi <- read_csv("clean data/MG_ndvi.csv")
+ndvi_raw <- read_csv("clean data/MG_ndvi.csv") 
 ep_raw <- read_csv("clean data/MG_ep.csv")
 cm_raw <- read_csv("clean data/MG_cm.csv")
 cc_raw <- read_csv("clean data/MG_cc.csv")
@@ -351,7 +351,7 @@ x.grob <- textGrob("Initial Algal Abundance", gp = gpar(fontsize = 11))
 figcomb3 <- grid.arrange(figcomb2, bottom = x.grob)
 
 ggpreview(figcomb3, width = 1476, height = 1771, units = "px", dpi = 300)
+ggsave(figcomb3, filename = "figures/Botsch_MidgeGrowth_fig1.jpeg", device = "jpeg", width = 1476, height = 1771, units = "px", dpi = 300)
 ggsave(figcomb3, filename = "figures/Botsch_MidgeGrowth_fig1.pdf", device = "pdf", width = 1476, height = 1771, units = "px", dpi = 300)
-
 
 

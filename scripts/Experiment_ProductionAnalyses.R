@@ -122,6 +122,8 @@ production_boot <- estimated_growth %>%
          g = incsumprod(n1 = nt_day0, n2 = nt, wt1 = wt_day0, wt2 = wt, day)$g, #average growth in mg/ind
          gd = g/day) 
 
+# write_csv(production_boot, "outputs/production_boot.csv")
+
 #daily secondary production of midges on day 22
 total_sp <- eb %>% 
   filter(day == 22) %>% 
@@ -163,6 +165,7 @@ prod_cm <- nep %>%
   ungroup %>% 
   mutate(unique_id =1:n())
 
+# write_csv(prod_cm, "outputs/prod_cm.csv")
 #====Fit Measurement Error Model====
 #setup covariance matrices
 cov.PPc <- matrix(nrow  = 20, ncol = 20, 0)
@@ -208,6 +211,7 @@ growfig <- prod_cm %>%
 
 ggpreview(plot = growfig, dpi = 300, width = 945, height = 1102, units = "px")
 ggsave(plot = growfig, filename = "figures/Botsch_MidgeGrowth_fig2.pdf", dpi = 300, width = 945, height = 1102, units = "px")
+ggsave(plot = growfig, filename = "figures/Botsch_MidgeGrowth_fig2.jpeg", dpi = 300, width = 945, height = 1102, units = "px")
 
 
 growfig_pres <- prod_cm %>% 
