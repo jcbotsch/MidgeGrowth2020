@@ -1,6 +1,6 @@
 #MidgeGrowth2020
 
-This contains the data and code associated with "The balance between growth and future resource supply for an aquatic insect feeding on contemporaneously growing algae." 
+This contains the data and code associated with "Aquatic insects balance growth with future supply of algal food resources" https://doi.org/10.1111/oik.09902. The publication record for the analyses are https://doi.org/10.5281/zenodo.7250504. 
 
 Completely unaltered experimental data are in the raw data folder and analysis ready code are in the clean data folder. The code used to prepare the datasheets used in the experiment is in scripts/PrepareData.R. This includes code to convert observations of dissolved oxygen to GPP and to assign instars to midge larvae based on their head capsule width. The products of this cleaning are in clean data, with one additional dataset (routine midge head capsules from 2013-2020). These data come from Wetzel et al. (2021) https://doi.org/10.6084/m9.figshare.14095697.v3.
 
